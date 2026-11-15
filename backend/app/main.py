@@ -1,9 +1,11 @@
+import os
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+# The Next.js static export (frontend/out), copied here by the Dockerfile.
+STATIC_DIR = Path(os.environ.get("STATIC_DIR", Path(__file__).resolve().parent.parent / "static"))
 
 app = FastAPI(title="Tidy")
 

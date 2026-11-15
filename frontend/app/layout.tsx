@@ -15,7 +15,7 @@ const description =
 
 export const metadata: Metadata = {
   // Link previews need absolute image addresses.
-  metadataBase: new URL("http://localhost:3000"),
+  metadataBase: new URL("http://localhost:8000"),
   title,
   description,
   openGraph: { title, description, type: "website", siteName: "Tidy" },

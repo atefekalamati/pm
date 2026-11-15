@@ -1,6 +1,8 @@
 # Frontend (Tidy)
 
-A bilingual (English / Persian, LTR / RTL) Kanban board with a team chat. Next.js 16 App Router, React 19, TypeScript, Tailwind CSS 4. It is a client-only app right now: all state lives in the browser (`localStorage`) and there is no backend call yet.
+A bilingual (English / Persian, LTR / RTL) Kanban board with a team chat. Next.js 16 App Router, React 19, TypeScript, Tailwind CSS 4. It is a client-only app built as a static export (`output: "export"` in `next.config.ts`, output in `out/`), which FastAPI serves at `/`. So far all state lives in the browser (`localStorage`) and there is no backend call yet.
+
+Static export rules: no server-only features (Route Handlers that read the request, Server Actions, `cookies()`, `headers()`, default `next/image` loader). `cacheComponents` and `partialPrefetching` are off because they enable PPR, which `next build` rejects in export mode.
 
 ## Structure
 
@@ -29,8 +31,8 @@ Defined once in `app/globals.css` as role-named variables inside `@theme` (`--co
 ## Tests
 
 - Unit (Vitest + Testing Library, jsdom): `npm test`. Files sit next to the code (`*.test.ts(x)`); `vitest.setup.ts` clears `localStorage` and resets the store before each test.
-- End-to-end (Playwright, Chromium at 1860x900): `npx playwright test`. Specs in `e2e/` (`board`, `chat`, `sidebar`, shared `helpers.ts`); the config starts `npm run dev` on port 3000.
-- Also: `npm run lint`, `npm run build`.
+- End-to-end (Playwright, Chromium at 1860x900): `npx playwright test`. Specs in `e2e/` (`board`, `chat`, `sidebar`, shared `helpers.ts`); the config starts `npm run dev` on port 3000. To test the Docker container instead, start it and set `PLAYWRIGHT_BASE_URL=http://localhost:8000`; no dev server is started then.
+- Also: `npm run lint`, `npm run build` (writes `out/`).
 
 <!-- BEGIN:nextjs-agent-rules -->
 

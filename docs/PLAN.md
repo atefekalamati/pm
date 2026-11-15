@@ -113,16 +113,19 @@
 
 ### چک‌لیست
 
-- [ ] `next.config.ts`: افزودن `output: "export"`؛ بررسی سازگاری `cacheComponents` و `partialPrefetching` با Static Export طبق مستندات `node_modules/next/dist/docs/` و حذف هر کدام که ناسازگار است؛ بدون هیچ تنظیم Netlify
-- [ ] اطمینان از این‌که هیچ قابلیت سمت سرور (Route Handler، Server Action، `headers()`) استفاده نشده و هر مورد ناسازگار با معادل ساده‌ی سمت کاربر جایگزین شود؛ `opengraph-image.png` و `favicon.ico` در خروجی ایستا ساخته شوند
-- [ ] `metadataBase` در `layout.tsx` به آدرس سرویس‌دهی (`http://localhost:8000`) تغییر کند
-- [ ] فونت Vazirmatn از `next/font/google` در زمان build دانلود می‌شود: build داخل Docker باید به اینترنت دسترسی داشته باشد (در صورت مشکل، فونت با بسته‌ی npm محلی شود)
-- [ ] `Dockerfile` چندمرحله‌ای: مرحله‌ی Node (`npm ci`، `npm run build`) و کپی `frontend/out/` به پوشه‌ی static بک‌اند؛ حذف صفحه‌ی Hello World
-- [ ] FastAPI فایل‌های `out/` را از `/` ارائه دهد (`StaticFiles(html=True)`) و مسیرهای `/api/*` قبل از آن ثبت شوند
-- [ ] `playwright.config.ts`: `baseURL` از متغیر محیطی (پیش‌فرض سرور توسعه؛ قابل اجرا روی کانتینر در `8000`)
-- [ ] تکمیل آزمون‌های واحد برای بخش‌هایی که پوشش ندارند (مثلاً `useShortcuts`)
+- [x] `next.config.ts`: افزودن `output: "export"`؛ بررسی سازگاری `cacheComponents` و `partialPrefetching` با Static Export طبق مستندات `node_modules/next/dist/docs/` و حذف هر کدام که ناسازگار است؛ بدون هیچ تنظیم Netlify
+- [x] اطمینان از این‌که هیچ قابلیت سمت سرور (Route Handler، Server Action، `headers()`) استفاده نشده و هر مورد ناسازگار با معادل ساده‌ی سمت کاربر جایگزین شود؛ `opengraph-image.png` و `favicon.ico` در خروجی ایستا ساخته شوند
+- [x] `metadataBase` در `layout.tsx` به آدرس سرویس‌دهی (`http://localhost:8000`) تغییر کند
+- [x] فونت Vazirmatn از `next/font/google` در زمان build دانلود می‌شود: build داخل Docker باید به اینترنت دسترسی داشته باشد (در صورت مشکل، فونت با بسته‌ی npm محلی شود)
+- [x] `Dockerfile` چندمرحله‌ای: مرحله‌ی Node (`npm ci`، `npm run build`) و کپی `frontend/out/` به پوشه‌ی static بک‌اند؛ حذف صفحه‌ی Hello World
+- [x] FastAPI فایل‌های `out/` را از `/` ارائه دهد (`StaticFiles(html=True)`) و مسیرهای `/api/*` قبل از آن ثبت شوند
+- [x] `playwright.config.ts`: `baseURL` از متغیر محیطی (پیش‌فرض سرور توسعه؛ قابل اجرا روی کانتینر در `8000`)
+- [x] تکمیل آزمون‌های واحد برای بخش‌هایی که پوشش ندارند (مثلاً `useShortcuts`)
 
 ### آزمون‌ها
+
+نتیجه: pytest ۳ موفق؛ Vitest ۱۲۱ موفق (۵ آزمون جدید میانبرها)؛ lint و build موفق؛ Playwright ۶۰ موفق روی سرور توسعه و ۶۰ موفق روی کانتینر (`PLAYWRIGHT_BASE_URL=http://localhost:8000`). `cacheComponents` و `partialPrefetching` حذف شدند چون PPR را فعال می‌کنند و با Static Export ناسازگارند.
+
 
 - `npm test` و `npx playwright test` روی سرور توسعه موفق.
 - `npm run build` بدون خطا و ساخت `out/index.html`.
@@ -130,6 +133,9 @@
 - pytest: `/` فایل `index.html` را برمی‌گرداند و `/api/health` هنوز کار می‌کند.
 
 ### معیار موفقیت
+
+**وضعیت: بخش سوم انجام شد (در انتظار تأیید کاربر).**
+
 
 - پس از `scripts/start`، تخته‌ی Tidy با همه‌ی قابلیت‌های فعلی (زبان، کشیدن کارت، گفتگو، عکس) از `http://localhost:8000/` کار می‌کند.
 - همه‌ی آزمون‌های Playwright روی کانتینر هم موفق‌اند.

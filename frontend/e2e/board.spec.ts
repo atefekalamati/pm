@@ -313,8 +313,11 @@ test("keyboard shortcuts drive the board", async ({ page }) => {
   await expect(card(column(page, "doing"), "Column unit tests").getByRole("button", { name: "Column unit tests" })).toBeFocused();
   await page.keyboard.press(".");
   await expect(card(column(page, "review"), "Column unit tests")).toBeVisible();
+  // Focus follows the card one frame later; wait for it before the next key, as after the first move.
+  await expect(card(column(page, "review"), "Column unit tests").getByRole("button", { name: "Column unit tests" })).toBeFocused();
   await page.keyboard.press(",");
   await expect(card(column(page, "doing"), "Column unit tests")).toBeVisible();
+  await expect(card(column(page, "doing"), "Column unit tests").getByRole("button", { name: "Column unit tests" })).toBeFocused();
 
   await page.keyboard.press("Delete");
   await expect(card(page, "Column unit tests")).toHaveCount(0);

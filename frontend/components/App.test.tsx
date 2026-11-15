@@ -513,4 +513,50 @@ describe("shortcuts", () => {
     press({ key: "Delete", code: "Delete" }, focusedButton("Board progress bar"));
     expect(store().cards.c1).toBeUndefined();
   });
+
+  it("ignores keys pressed with Ctrl, Cmd or Alt", () => {
+    render(<Shortcuts />);
+    press({ key: "l", code: "KeyL", ctrlKey: true });
+    press({ key: "l", code: "KeyL", metaKey: true });
+    press({ key: "l", code: "KeyL", altKey: true });
+    expect(store().language).toBe("en");
+  });
+
+  it("is disabled while a dialog is open", () => {
+    render(
+      <>
+        <Shortcuts />
+        <HelpDialog />
+      </>,
+    );
+    press({ key: "l", code: "KeyL" });
+    expect(store().language).toBe("en");
+  });
+
+  it("drops the G chord after 1.5 seconds", () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    render(<Shortcuts />);
+    press({ key: "g", code: "KeyG" });
+    now.mockReturnValue(11_600);
+    press({ key: "c", code: "KeyC" });
+    expect(store().view).toBe("board");
+    now.mockRestore();
+  });
+
+  it("does nothing when turned off", () => {
+    function Off() {
+      useShortcuts(false);
+      return null;
+    }
+    render(<Off />);
+    press({ key: "l", code: "KeyL" });
+    expect(store().language).toBe("en");
+  });
+
+  it("does not open a new card from Chat", () => {
+    act(() => store().setView("chat"));
+    render(<Shortcuts />);
+    press({ key: "n", code: "KeyN" });
+    expect(store().dialog).toBeNull();
+  });
 });

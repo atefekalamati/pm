@@ -194,3 +194,6 @@ test-results/
 playwright-report/
 blob-report/
 playwright/.cache/
+
+# Frontend build copied into the backend
+backend/static/
