@@ -1,12 +1,13 @@
 "use client";
 
-import { useLayoutEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
 import Board from "@/components/Board";
 import CardDialog from "@/components/CardDialog";
 import Chat from "@/components/Chat";
 import Header from "@/components/Header";
 import HelpDialog from "@/components/HelpDialog";
 import Sidebar from "@/components/Sidebar";
+import SignIn from "@/components/SignIn";
 import UndoToast from "@/components/UndoToast";
 import {
   getStorageError,
@@ -15,7 +16,10 @@ import {
   subscribeStorageStatus,
   useStore,
 } from "@/lib/store";
+import { checkSession, useSession } from "@/lib/session";
 import { useShortcuts } from "@/lib/useShortcuts";
+
+const SESSION_CHECK_MS = 60_000;
 
 const subscribe = () => () => {};
 
@@ -79,15 +83,39 @@ export default function Home() {
   const language = useStore((s) => s.language);
   const view = useStore((s) => s.view);
   const dialog = useStore((s) => s.dialog);
-  useShortcuts(storageStatus === "ready");
+  const session = useSession((s) => s.status);
+  useShortcuts(storageStatus === "ready" && session === "signed-in");
+
+  // The session can end while the board is open (expiry, sign-out in another tab), so check it
+  // again when the tab comes back, when Back/Forward restores the page from cache, and every minute.
+  useEffect(() => {
+    void checkSession();
+    const recheck = () => {
+      if (document.visibilityState === "visible") void checkSession();
+    };
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) void checkSession();
+    };
+    window.addEventListener("focus", recheck);
+    document.addEventListener("visibilitychange", recheck);
+    window.addEventListener("pageshow", onPageShow);
+    const timer = setInterval(recheck, SESSION_CHECK_MS);
+    return () => {
+      window.removeEventListener("focus", recheck);
+      document.removeEventListener("visibilitychange", recheck);
+      window.removeEventListener("pageshow", onPageShow);
+      clearInterval(timer);
+    };
+  }, []);
 
   useLayoutEffect(() => {
     document.documentElement.lang = language;
     document.documentElement.dir = language === "fa" ? "rtl" : "ltr";
   }, [language]);
 
-  if (!mounted || storageStatus === "loading") return null;
+  if (!mounted || storageStatus === "loading" || session === "checking") return null;
   if (storageStatus === "error") return <StorageRecovery />;
+  if (session === "signed-out") return <SignIn />;
 
   return (
     <div className="flex h-dvh">

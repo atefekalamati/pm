@@ -94,6 +94,20 @@ export const EventIcon = ({ path, size = 12 }: { path: string; size?: number }) 
   </Stroke>
 );
 
+/** The Tidy. mark and name, shared by the sidebar and the sign-in page. */
+export function Logo() {
+  return (
+    <>
+      <span aria-hidden className="grid size-[34px] place-items-center rounded-[9px] bg-primary text-white shadow-[0_4px_12px_rgba(47,111,168,.25)]">
+        <BoardIcon size={18} />
+      </span>
+      <h1 dir="ltr" className="font-brand text-[22px]/7 font-bold tracking-[-0.03em] text-heading">
+        Tidy<span aria-hidden className="text-primary">.</span>
+      </h1>
+    </>
+  );
+}
+
 export const iconButton = "grid size-9 shrink-0 place-items-center rounded-lg text-secondary transition-colors";
 
 export function Segmented({ label, children }: { label: string; children: ReactNode }) {

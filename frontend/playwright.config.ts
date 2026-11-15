@@ -12,12 +12,21 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"], viewport: { width: 1860, height: 900 } } }],
+  // Without an external URL: the FastAPI backend on 8000 (dev rewrites send /api there) and the Next.js dev server.
   webServer: externalURL
     ? undefined
-    : {
-        command: "npm run dev",
-        url: "http://localhost:3000",
-        reuseExistingServer: !process.env.CI,
-        timeout: 180_000,
-      },
+    : [
+        {
+          command: "uv run --directory ../backend uvicorn app.main:app --port 8000",
+          url: "http://localhost:8000/api/health",
+          reuseExistingServer: !process.env.CI,
+          timeout: 120_000,
+        },
+        {
+          command: "npm run dev",
+          url: "http://localhost:3000",
+          reuseExistingServer: !process.env.CI,
+          timeout: 180_000,
+        },
+      ],
 });

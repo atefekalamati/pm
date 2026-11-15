@@ -8,6 +8,15 @@ export const PNG = Buffer.from(
   "base64",
 );
 
+export const CREDENTIALS = { username: "user", password: "password" };
+
+/** Signs in through the API; the page shares the cookie. */
+export async function login(page: Page) {
+  const response = await page.request.post("/api/login", { data: CREDENTIALS });
+  expect(response.ok()).toBe(true);
+}
+
+/** Every test starts signed in, on the board. Sign-in itself is tested in auth.spec.ts. */
 export const test = base.extend<{ errors: string[] }>({
   errors: [
     async ({ page }, use) => {
@@ -17,6 +26,7 @@ export const test = base.extend<{ errors: string[] }>({
         if (m.type() === "error") errors.push(m.text());
       });
       await page.clock.setFixedTime(TODAY);
+      await login(page);
       await page.goto("/");
       await expect(page.getByTestId("card").first()).toBeVisible();
       await use(errors);

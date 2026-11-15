@@ -1,11 +1,12 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useT } from "@/lib/i18n";
+import { signOut } from "@/lib/session";
 import { columnOf, useStore } from "@/lib/store";
 import type { Card } from "@/lib/types";
 import { CURRENT_USER_ID, GENERAL_SPACE } from "@/data/seed";
-import { Avatar, BoardIcon, ChatIcon, ChevronDownIcon, DotsIcon, Segmented, SegmentButton, cx } from "./ui";
+import { Avatar, BoardIcon, ChatIcon, ChevronDownIcon, DotsIcon, Logo, Segmented, SegmentButton, cx } from "./ui";
 
 const activeItem = "bg-column shadow-[inset_0_0_0_1px_var(--color-selected-ring)]";
 const spaceButton = (active: boolean) =>
@@ -28,6 +29,67 @@ function NavButton({ active, onClick, children }: { active: boolean; onClick: ()
     >
       {children}
     </button>
+  );
+}
+
+/** The ⋯ menu next to the user's name. Opens upwards, since it sits at the bottom of the sidebar. */
+function AccountMenu() {
+  const { t } = useT();
+  const [open, setOpen] = useState(false);
+  const wrapper = useRef<HTMLDivElement>(null);
+  const toggle = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    wrapper.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus();
+    const close = () => {
+      setOpen(false);
+      toggle.current?.focus();
+    };
+    const closeOnOutside = (e: PointerEvent) => {
+      if (!wrapper.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const closeOnEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    document.addEventListener("pointerdown", closeOnOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  return (
+    <div ref={wrapper} className="relative flex-none">
+      <button
+        ref={toggle}
+        type="button"
+        aria-label={t.accountMenu}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="grid size-9 place-items-center rounded-lg text-muted transition-colors hover:bg-ghost-hover hover:text-ink"
+      >
+        <DotsIcon />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          aria-label={t.accountMenu}
+          className="absolute bottom-11 end-0 z-10 flex w-[180px] flex-col rounded-[10px] border border-column-border bg-surface p-1.5 shadow-popover"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => void signOut()}
+            className="flex h-9 items-center rounded-[7px] px-2.5 text-start text-[13px] text-ink hover:bg-column"
+          >
+            {t.signOut}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -78,12 +140,7 @@ export default function Sidebar() {
   return (
     <aside aria-label={t.sidebarLabel} className="flex h-full w-64 flex-none flex-col border-e border-hairline bg-chrome">
       <div className="flex items-center gap-2.5 px-[18px] pb-4 pt-5">
-        <span aria-hidden className="grid size-[34px] place-items-center rounded-[9px] bg-primary text-white shadow-[0_4px_12px_rgba(47,111,168,.25)]">
-          <BoardIcon size={18} />
-        </span>
-        <h1 dir="ltr" className="font-brand text-[22px]/7 font-bold tracking-[-0.03em] text-heading">
-          Tidy<span aria-hidden className="text-primary">.</span>
-        </h1>
+        <Logo />
         <span className="ms-auto inline-flex h-5 items-center rounded-md border border-segment-border bg-segment px-[7px] text-[10.5px] font-semibold tracking-[.04em] text-muted">
           {t.wsBadge}
         </span>
@@ -163,13 +220,7 @@ export default function Sidebar() {
             <span className="text-[13px] font-semibold text-ink">{L(me.name)}</span>
             <span className="text-[11.5px] text-muted">{t.owner}</span>
           </span>
-          <button
-            type="button"
-            aria-label={t.accountMenu}
-            className="grid size-9 flex-none place-items-center rounded-lg text-muted transition-colors hover:bg-ghost-hover hover:text-ink"
-          >
-            <DotsIcon />
-          </button>
+          <AccountMenu />
         </div>
       </div>
     </aside>
