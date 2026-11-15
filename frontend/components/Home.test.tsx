@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Home from "@/app/page";
 import { createSeed } from "@/data/fixtures";
 import { useSession } from "@/lib/session";
-import { useStore } from "@/lib/store";
+import { useStore, whenIdle } from "@/lib/store";
 import { fetchMock } from "../vitest.server";
 import NoticeToast, { NOTICE_MS } from "./NoticeToast";
 
@@ -106,6 +106,50 @@ describe("when the server cannot be reached", () => {
     serve({ me: 500 });
     render(<Home />);
     expect(await screen.findByTestId("unreachable")).toBeInTheDocument();
+  });
+});
+
+describe("closing the tab", () => {
+  const closing = () => {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+
+  it("shows the browser's warning only while a change is still being sent", async () => {
+    serve();
+    render(<Home />);
+    await screen.findAllByTestId("card");
+    expect(closing()).toBe(false); // nothing to lose
+
+    let answer: () => void = () => {};
+    fetchMock.mockImplementation(() => new Promise<Response>((resolve) => (answer = () => resolve(new Response(null, { status: 204 })))));
+    act(() => useStore.getState().setDensity("compact"));
+    expect(closing()).toBe(true); // the change has not reached the server yet
+
+    answer();
+    await whenIdle();
+    expect(closing()).toBe(false); // saved: the tab can close
+  });
+
+  it("warns for a change waiting in the queue too", async () => {
+    serve();
+    render(<Home />);
+    await screen.findAllByTestId("card");
+    const waiting: (() => void)[] = [];
+    fetchMock.mockImplementation(() => new Promise<Response>((resolve) => waiting.push(() => resolve(new Response(null, { status: 204 })))));
+    act(() => {
+      useStore.getState().setDensity("compact"); // on its way
+      useStore.getState().toggleColumn("todo"); // waiting behind it
+    });
+    expect(waiting).toHaveLength(1);
+    expect(closing()).toBe(true);
+    waiting[0]();
+    await vi.waitFor(() => expect(waiting).toHaveLength(2)); // the queued one is sent next
+    expect(closing()).toBe(true);
+    waiting[1]();
+    await whenIdle();
+    expect(closing()).toBe(false);
   });
 });
 

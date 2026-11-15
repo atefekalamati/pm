@@ -10,7 +10,6 @@ services:
         required: false
     environment:
       DATABASE_PATH: /data/tidy.db
-      TIDY_E2E: ${TIDY_E2E:-}  # set to 1 only for Playwright runs; see frontend/AGENTS.md
     volumes:
       - tidy-data:/data
     healthcheck:

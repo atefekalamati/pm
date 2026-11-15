@@ -17,6 +17,13 @@ from app.main import app  # noqa: E402
 from app.security import hash_password  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def no_ai_in_the_environment(monkeypatch):
+    """No test reaches a real AI service by accident: the AI variables are cleared, and tests set what they need."""
+    for name in ("OPENROUTER_API_KEY", "AI_BASE_URL", "AI_MODEL"):
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture
 def db_file(tmp_path, monkeypatch):
     """A fresh database file for every test (created by the app at startup)."""

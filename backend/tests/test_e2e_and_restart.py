@@ -9,7 +9,7 @@ from app.main import app
 def test_the_test_only_endpoint_is_absent_unless_enabled(me, monkeypatch):
     # Not registered in a normal run: the route does not exist (the static files answer instead).
     assert not [path for path in me.get("/openapi.json").json()["paths"] if "e2e" in path]
-    assert me.post("/api/e2e/users", json={"username": "x"}).status_code in (404, 405)
+    assert me.post("/api/e2e/users", json={"username": "x"}).status_code == 404
 
 
 def test_the_test_only_endpoint_makes_a_user_with_a_dated_board(db_file, monkeypatch):

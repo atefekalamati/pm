@@ -13,7 +13,7 @@ import SignIn from "@/components/SignIn";
 import UndoToast from "@/components/UndoToast";
 import Unreachable from "@/components/Unreachable";
 import { checkSession, retrySession, useSession } from "@/lib/session";
-import { useStore } from "@/lib/store";
+import { hasPendingChanges, useStore } from "@/lib/store";
 import { useShortcuts } from "@/lib/useShortcuts";
 
 const SESSION_CHECK_MS = 60_000;
@@ -51,6 +51,15 @@ export default function Home() {
       window.removeEventListener("pageshow", onPageShow);
       clearInterval(timer);
     };
+  }, []);
+
+  // Closing the tab while a change is still being sent would lose it: ask the browser to show its standard warning.
+  useEffect(() => {
+    const warn = (e: BeforeUnloadEvent) => {
+      if (hasPendingChanges()) e.preventDefault();
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
   }, []);
 
   // Signed in: fetch the board. Nothing of it is shown (no sample data, no empty board) until it has arrived.

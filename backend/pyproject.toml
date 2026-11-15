@@ -5,6 +5,7 @@ description = "FastAPI backend for Tidy"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.163.0",
+    "openai>=3.51.0",
     "uvicorn>=0.54.0",
 ]
 

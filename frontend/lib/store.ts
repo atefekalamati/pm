@@ -134,6 +134,9 @@ function showSaving() {
   if (typeof document !== "undefined") document.documentElement.dataset.saving = String(running || queue.length > 0);
 }
 
+/** True while a change is still on its way to the server. */
+export const hasPendingChanges = () => running || queue.length > 0;
+
 /** Resolves when nothing is waiting to be sent. */
 export const whenIdle = () => new Promise<void>((resolve) => (running || queue.length ? idleWaiters.push(resolve) : resolve()));
 

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, field_validator
 
-from app import board, images
+from app import ai, board, images
 from app.auth import current_user
 from app.db import get_db, tx
 
@@ -198,6 +198,28 @@ def create_task(space_id: str, task: NewTask, c: Ctx = Depends(ctx)):
 @router.post("/spaces/{space_id}/read", status_code=204)
 def mark_read(space_id: str, c: Ctx = Depends(ctx)):
     board.mark_read(c.conn, c.board_id, c.user_id, space_id)
+
+
+# ---- AI --------------------------------------------------------------------------------------------
+
+
+@router.get("/ai/status")
+def ai_status(_user: sqlite3.Row = Depends(current_user)):
+    """Whether an API key is set. The assistant panel (Part 10) shows "AI is not configured" when it is not."""
+    return {"configured": ai.is_configured()}
+
+
+@router.post("/ai/test")
+def ai_test(_user: sqlite3.Row = Depends(current_user)):
+    """Asks the model what 2+2 is: proves the key, the address and the model name work. Nothing else is touched."""
+    question = "What is 2+2? Answer with just the number."
+    try:
+        answer = ai.complete([{"role": "user", "content": question}])
+    except ai.AiNotConfigured:
+        raise HTTPException(status_code=503, detail="AI is not configured") from None
+    except ai.AiUnavailable as error:
+        raise HTTPException(status_code=502, detail=str(error)) from None
+    return {"question": question, "answer": answer.strip(), "model": ai.model()}
 
 
 # ---- images ----------------------------------------------------------------------------------------

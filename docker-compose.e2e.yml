@@ -1,0 +1,8 @@
+# Test containers only. Never used by scripts/start; see frontend/AGENTS.md.
+# Adds the test-only user endpoint (backend/app/e2e.py) that Playwright tests need.
+#
+#   $env:TIDY_PORT="8001"; docker compose -p tidy-e2e -f docker-compose.yml -f docker-compose.e2e.yml up -d --build --wait
+services:
+  app:
+    environment:
+      TIDY_E2E: "1"

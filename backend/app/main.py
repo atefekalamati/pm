@@ -2,7 +2,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 
 from app import api, auth, db, e2e
@@ -42,6 +42,12 @@ app.include_router(auth.router)
 app.include_router(api.router)
 if os.environ.get("TIDY_E2E") == "1":  # test servers only: lets each Playwright test create its own user
     app.include_router(e2e.router)
+
+@app.api_route("/api/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"], include_in_schema=False)
+def unknown_api(rest: str):
+    """Any /api path that does not exist is a 404, for every method (the static files would answer 405 to a POST)."""
+    raise HTTPException(status_code=404, detail="Not found")
+
 
 # Registered last so /api routes take precedence. Absent when the backend runs next to `npm run dev`.
 if STATIC_DIR.is_dir():
