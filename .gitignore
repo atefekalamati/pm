@@ -183,7 +183,11 @@ next-env.d.ts
 *.tsbuildinfo
 npm-debug.log*
 .env*
+!.env.example
 *.pem
+
+# SQLite database
+*.db
 
 # Playwright
 test-results/

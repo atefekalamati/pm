@@ -72,27 +72,33 @@
 
 ### چک‌لیست
 
-- [ ] `backend/pyproject.toml` با `uv` (FastAPI، uvicorn؛ pytest و httpx برای آزمون) و `uv.lock`
-- [ ] `backend/app/main.py`: مسیر `GET /api/health` با پاسخ `{"status": "ok"}` و ارائه‌ی `backend/static/` از `/`
-- [ ] یک `index.html` ساده‌ی «Hello World» در `backend/static/` که با `fetch("/api/health")` نتیجه را نمایش می‌دهد
-- [ ] `Dockerfile` در ریشه: مرحله‌ی Python با `uv sync --frozen`، اجرای uvicorn روی پورت `8000`
-- [ ] `.dockerignore` (شامل `node_modules`، `.next`، `out`، `.venv`، `.env`، `*.db`)
-- [ ] `docker-compose.yml` کنار `Dockerfile`: یک سرویس، پورت `8000:8000`، `env_file` برای `.env` (اختیاری با `required: false`)، volume نام‌دار `tidy-data:/data` و `DATABASE_PATH=/data/tidy.db`
-- [ ] فایل‌های `*.db` در `.gitignore`
-- [ ] `.env` فقط در زمان اجرا از طریق compose خوانده می‌شود (کلید هرگز داخل image کپی نمی‌شود)
-- [ ] `.env.example` در ریشه با `OPENROUTER_API_KEY=`، `AI_BASE_URL=https://openrouter.ai/api/v1` و `AI_MODEL=openai/gpt-oss-120b` و بدون هیچ مقدار واقعی کلید؛ `!.env.example` در `.gitignore` تا الگوی `.env*` آن را نادیده نگیرد
-- [ ] اسکریپت‌ها در `scripts/`: `start.sh` و `stop.sh` (Mac / Linux)، `start.ps1` و `stop.ps1` (Windows)؛ `docker compose up -d --build` و `docker compose down`؛ start پس از بالا آمدن آدرس `http://localhost:8000` را چاپ کند؛ اگر `.env` نیست، برنامه بدون هوش مصنوعی اجرا شود
-- [ ] نکات Windows (Docker Desktop با WSL2): `.gitattributes` با `*.sh text eol=lf` تا اسکریپت‌ها و فایل‌های داخل کانتینر با CRLF خراب نشوند؛ مسیرهای نسبی در `docker-compose.yml`؛ اگر Docker در حال اجرا نیست پیام روشن
-- [ ] بخش کوتاه «اجرا» در `README.md`
+- [x] `backend/pyproject.toml` با `uv` (FastAPI، uvicorn؛ pytest و httpx برای آزمون) و `uv.lock`
+- [x] `backend/app/main.py`: مسیر `GET /api/health` با پاسخ `{"status": "ok"}` و ارائه‌ی `backend/static/` از `/`
+- [x] یک `index.html` ساده‌ی «Hello World» در `backend/static/` که با `fetch("/api/health")` نتیجه را نمایش می‌دهد
+- [x] `Dockerfile` در ریشه: مرحله‌ی Python با `uv sync --frozen`، اجرای uvicorn روی پورت `8000`
+- [x] `.dockerignore` (شامل `node_modules`، `.next`، `out`، `.venv`، `.env`، `*.db`)
+- [x] `docker-compose.yml` کنار `Dockerfile`: یک سرویس، پورت `8000:8000`، `env_file` برای `.env` (اختیاری با `required: false`)، volume نام‌دار `tidy-data:/data` و `DATABASE_PATH=/data/tidy.db`
+- [x] فایل‌های `*.db` در `.gitignore`
+- [x] `.env` فقط در زمان اجرا از طریق compose خوانده می‌شود (کلید هرگز داخل image کپی نمی‌شود)
+- [x] `.env.example` در ریشه با `OPENROUTER_API_KEY=`، `AI_BASE_URL=https://openrouter.ai/api/v1` و `AI_MODEL=openai/gpt-oss-120b` و بدون هیچ مقدار واقعی کلید؛ `!.env.example` در `.gitignore` تا الگوی `.env*` آن را نادیده نگیرد
+- [x] اسکریپت‌ها در `scripts/`: `start.sh` و `stop.sh` (Mac / Linux)، `start.ps1` و `stop.ps1` (Windows)؛ `docker compose up -d --build` و `docker compose down`؛ start پس از بالا آمدن آدرس `http://localhost:8000` را چاپ کند؛ اگر `.env` نیست، برنامه بدون هوش مصنوعی اجرا شود
+- [x] نکات Windows (Docker Desktop با WSL2): `.gitattributes` با `*.sh text eol=lf` تا اسکریپت‌ها و فایل‌های داخل کانتینر با CRLF خراب نشوند؛ مسیرهای نسبی در `docker-compose.yml`؛ اگر Docker در حال اجرا نیست پیام روشن
+- [x] بخش کوتاه «اجرا» در `README.md`
 
 ### آزمون‌ها
 
-- `backend/tests/test_health.py` با `TestClient`: `/api/health` مقدار `ok` می‌دهد و `/` صفحه‌ی HTML را برمی‌گرداند.
+نتیجه: pytest ۲ موفق؛ `start.ps1` / `stop.ps1` و `start.sh` / `stop.sh` (Git Bash) روی Windows اجرا شدند؛ اجرای دوباره‌ی start موفق؛ پیام «Docker is not running» با `DOCKER_HOST` نادرست بررسی شد.
+
+
+- `backend/tests/test_health.py` با `TestClient`: `/api/health` بدون ورود مقدار `ok` می‌دهد و `/` صفحه‌ی HTML را برمی‌گرداند.
 - `docker compose config` بدون خطا؛ `git check-ignore .env` موفق و `.env.example` در مخزن است و هیچ کلید واقعی ندارد.
 - دستی روی Windows: `scripts/start.ps1` آدرس `http://localhost:8000` را چاپ می‌کند؛ باز کردن آن و دیدن «Hello World» و پاسخ API؛ سپس `scripts/stop.ps1`.
 - همین روند با `start.sh` / `stop.sh` (در صورت دسترسی، روی Mac یا Linux یا WSL).
 
 ### معیار موفقیت
+
+**وضعیت: بخش دوم انجام شد (در انتظار تأیید کاربر).**
+
 
 - با یک فرمان، کانتینر ساخته و اجرا می‌شود و صفحه‌ی Hello World همراه با نتیجه‌ی فراخوانی API در مرورگر دیده می‌شود.
 - اجرای دوباره‌ی start بدون خطا کار می‌کند و stop کانتینر را کامل متوقف می‌کند.
@@ -150,7 +156,7 @@
 - [ ] فقط `user` می‌تواند وارد شود؛ Ali Rezaei، Maryam Karimi و Reza Mohammadi اعضای تیم‌اند اما ورودشان رد می‌شود
 - [ ] نام کاربر فعلی در `data/seed.ts` همان «Atefe Kalamati» می‌ماند و تغییری نمی‌کند (عضو `CURRENT_USER_ID` نمونه به کاربر `user` نگاشت می‌شود)
 - [ ] نشست ساده: توکن تصادفی در کوکی `HttpOnly` و `SameSite=Lax`؛ در این بخش در حافظه نگه‌داری و در بخش ششم به جدول `sessions` منتقل می‌شود
-- [ ] یک وابستگی FastAPI (`current_user`) که برای همه‌ی مسیرهای `/api/*` به‌جز login خطای `401` می‌دهد (`/api/health` هم از این بخش احراز هویت لازم دارد و آزمون بخش دوم به‌روز می‌شود)
+- [ ] یک وابستگی FastAPI (`current_user`) که برای همه‌ی مسیرهای `/api/*` به‌جز login و `/api/health` خطای `401` می‌دهد. `/api/health` در همه‌ی بخش‌ها عمومی می‌ماند (بدون ورود)، چون Docker و اسکریپت start با آن بالا بودن سرور را بررسی می‌کنند و چیز حساسی برنمی‌گرداند
 - [ ] فرانت‌اند: صفحه‌ی ورود با پالت Linen Sky، دوزبانه (کلیدهای جدید در `en.ts` و `fa.ts`)، RTL در فارسی، پیام خطای اعتبارنامه‌ی نادرست
 - [ ] `page.tsx`: پیش از نمایش تخته، `GET /api/me` را بررسی کند؛ در صورت `401` فرم ورود نمایش داده شود
 - [ ] دکمه‌ی خروج در نوار کناری یا نوار بالا
@@ -158,7 +164,7 @@
 
 ### آزمون‌ها
 
-- pytest: ورود درست کوکی می‌دهد؛ ورود نادرست `401`؛ ورود با نام کاربری علی، مریم یا رضا رد می‌شود؛ `/api/me` بدون کوکی `401` و با کوکی نام کاربر؛ پس از logout توکن نامعتبر است.
+- pytest: ورود درست کوکی می‌دهد؛ ورود نادرست `401`؛ ورود با نام کاربری علی، مریم یا رضا رد می‌شود؛ `/api/me` بدون کوکی `401` و با کوکی نام کاربر؛ `/api/health` بدون کوکی هنوز `200` می‌دهد؛ پس از logout توکن نامعتبر است.
 - Vitest: فرم ورود (ارسال، نمایش خطا، ترجمه در دو زبان).
 - Playwright: ورود ناموفق و پیام خطا؛ ورود موفق و دیدن تخته و نام Atefe Kalamati؛ رفرش و ماندن در حالت ورود؛ خروج و بازگشت به فرم؛ فرم ورود در فارسی راست‌چین است. `e2e/helpers.ts` یک تابع `login()` برای آزمون‌های قبلی داشته باشد.
 
