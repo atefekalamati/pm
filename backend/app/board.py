@@ -463,11 +463,11 @@ def one_message(conn, message_id: int) -> dict:
     return message_json(conn.execute(f"{MESSAGE_SELECT} WHERE m.id = ?", (message_id,)).fetchone())
 
 
-def create_task_from_message(conn, board_id: str, author_id: str, space_id: str, body: str) -> dict:
+def create_task_from_message(conn, board_id: str, author_id: str, space_id: str, body: str, card_id: str | None = None) -> dict:
     """A new card in To do (assigned to its creator) plus a "task created" announcement in the source conversation."""
     with tx(conn):
         space = space_row(conn, board_id, space_id)
-        card_id = _insert_card(conn, board_id, "todo", {"title": body, "details": "", "priority": "medium", "dueDate": None, "labelIds": [], "memberIds": [author_id]})
+        card_id = _insert_card(conn, board_id, "todo", {"title": body, "details": "", "priority": "medium", "dueDate": None, "labelIds": [], "memberIds": [author_id]}, card_id)
         message_id = conn.execute(
             "INSERT INTO messages (space_id, author_id, kind, card_id, created_at) VALUES (?, ?, 'task', ?, ?)",
             (space["id"], author_id, card_id, now_iso()),

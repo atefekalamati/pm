@@ -4,12 +4,13 @@ services:
   app:
     build: .
     ports:
-      - "8000:8000"
+      - "${TIDY_PORT:-8000}:8000"
     env_file:
       - path: .env
         required: false
     environment:
       DATABASE_PATH: /data/tidy.db
+      TIDY_E2E: ${TIDY_E2E:-}  # set to 1 only for Playwright runs; see frontend/AGENTS.md
     volumes:
       - tidy-data:/data
     healthcheck:

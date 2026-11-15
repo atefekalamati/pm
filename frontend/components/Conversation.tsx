@@ -5,7 +5,7 @@ import { useT } from "@/lib/i18n";
 import { columnOf, useStore } from "@/lib/store";
 import type { ChatMessage, EventMessage, Message, SpaceId, TaskMessage } from "@/lib/types";
 import { compressImage, dataUrlBytes } from "@/lib/compressImage";
-import { CURRENT_USER_ID, GENERAL_SPACE, MAX_IMAGE_BYTES } from "@/data/seed";
+import { GENERAL_SPACE, MAX_IMAGE_BYTES } from "@/data/constants";
 import { ArrowIcon, Avatar, AvatarStack, ChatIcon, EventIcon, ImageIcon, TaskIcon, cx } from "./ui";
 
 const eventIcons = {
@@ -18,7 +18,8 @@ const eventIcons = {
 function useAuthorName() {
   const { t, L } = useT();
   const members = useStore((s) => s.members);
-  return (id: string) => (id === CURRENT_USER_ID ? t.you : L(members[id].name));
+  const currentUserId = useStore((s) => s.currentUserId);
+  return (id: string) => (id === currentUserId ? t.you : L(members[id].name));
 }
 
 function EventRow({ message }: { message: EventMessage }) {
@@ -76,7 +77,8 @@ function TaskCreatedRow({ message }: { message: TaskMessage }) {
 function Bubble({ message, onImageLoad }: { message: ChatMessage; onImageLoad: () => void }) {
   const { n, L } = useT();
   const members = useStore((s) => s.members);
-  const own = message.authorId === CURRENT_USER_ID;
+  const currentUserId = useStore((s) => s.currentUserId);
+  const own = message.authorId === currentUserId;
   const name = useAuthorName()(message.authorId);
   const text = message.text ? L(message.text) : "";
   const image = message.image;
@@ -162,8 +164,8 @@ function Composer({ spaceId }: { spaceId: SpaceId }) {
       return setError(t.notAnImage);
     }
     if (dataUrlBytes(src) > MAX_IMAGE_BYTES) return setError(t.imageTooLarge);
-    if (sendMessage(spaceId, { text: text || undefined, image: { src, file: file.name } })) reset();
-    else setError(t.storageFull);
+    sendMessage(spaceId, { text: text || undefined, image: { src, file: file.name } });
+    reset();
   }
 
   return (

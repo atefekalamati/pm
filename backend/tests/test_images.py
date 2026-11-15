@@ -1,7 +1,5 @@
-import base64
-
 import pytest
-from helpers import card, count, data_url, get_board, new_card, upload
+from helpers import card, count, get_board, new_card, post_image, upload
 
 from app import db
 
@@ -26,32 +24,40 @@ def test_the_three_image_types_are_accepted(me, mime):
 
 
 @pytest.mark.parametrize(
-    "data",
+    ("content", "mime"),
     [
-        "not a data url",
-        data_url(b"GIF89a", "image/gif"),
-        data_url(b"<svg/>", "image/svg+xml"),
-        "data:image/png;base64,@@@not-base64@@@",
-        "data:image/png;base64,",
-        "data:text/html;base64," + base64.b64encode(b"<script>").decode(),
+        (b"GIF89a", "image/gif"),
+        (b"<svg/>", "image/svg+xml"),
+        (b"<script>alert(1)</script>", "text/html"),
+        (b"plain bytes", "application/octet-stream"),
+        (b"", "image/png"),  # an empty file
     ],
 )
-def test_bad_uploads_are_rejected(me, conn, data):
-    assert me.post("/api/images", json={"fileName": "x.png", "dataUrl": data}).status_code == 422
+def test_bad_uploads_are_rejected(me, conn, content, mime):
+    assert post_image(me, content, mime, "x.png").status_code == 422
     assert count(conn, "images", "file_name = 'x.png'") == 0
+
+
+def test_a_json_body_is_not_an_image(me):
+    assert me.post("/api/images?fileName=x.png", json={"dataUrl": "data:image/png;base64,AAAA"}).status_code == 422
 
 
 def test_the_size_limit_is_2_mb(me, conn):
     just_fits = b"0" * (2 * 1024 * 1024)
-    assert me.post("/api/images", json={"fileName": "ok.png", "dataUrl": data_url(just_fits)}).status_code == 201
-    too_big = me.post("/api/images", json={"fileName": "big.png", "dataUrl": data_url(just_fits + b"0")})
+    assert post_image(me, just_fits, file_name="ok.png").status_code == 201
+    too_big = post_image(me, just_fits + b"0", file_name="big.png")
     assert too_big.status_code == 413
     assert count(conn, "images", "file_name = 'big.png'") == 0
 
 
 def test_a_missing_file_name_is_rejected(me):
-    assert me.post("/api/images", json={"fileName": "", "dataUrl": data_url()}).status_code == 422
-    assert me.post("/api/images", json={"dataUrl": data_url()}).status_code == 422
+    assert post_image(me, file_name="").status_code == 422
+    assert me.post("/api/images", content=b"abc", headers={"Content-Type": "image/png"}).status_code == 422
+
+
+def test_a_non_ascii_file_name_survives(me):
+    image = upload(me, file_name="عکس نمونه.png")
+    assert image["file"] == "عکس نمونه.png"
 
 
 def test_a_message_shows_its_image_with_a_link(me):

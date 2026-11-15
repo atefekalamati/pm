@@ -4,7 +4,7 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { useT } from "@/lib/i18n";
 import { useStore } from "@/lib/store";
 import type { ColumnId, Priority } from "@/lib/types";
-import { CURRENT_USER_ID, labels } from "@/data/seed";
+import { labels } from "@/data/constants";
 import Dialog from "./Dialog";
 import JalaliDatePicker from "./JalaliDatePicker";
 import { Segmented, SegmentButton, cx } from "./ui";
@@ -53,7 +53,8 @@ export default function CardDialog({ columnId, cardId }: { columnId: ColumnId; c
   const [priority, setPriority] = useState<Priority>(card?.priority ?? "medium");
   const [dueDate, setDueDate] = useState(card?.dueDate ?? null);
   const [labelIds, setLabelIds] = useState(card?.labelIds ?? []);
-  const [memberIds, setMemberIds] = useState(card?.memberIds ?? [CURRENT_USER_ID]);
+  const currentUserId = useStore((s) => s.currentUserId);
+  const [memberIds, setMemberIds] = useState(card?.memberIds ?? [currentUserId]);
   const [error, setError] = useState(false);
 
   function submit(e: FormEvent) {

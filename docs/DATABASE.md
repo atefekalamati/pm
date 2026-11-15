@@ -328,7 +328,7 @@ The AI assistant conversation, one continuous thread per user and board.
 **Decision:** bytes live in the `images` table as a BLOB (kept out of `messages` so message lists never read them).
 
 - **Columns:** `uploader_id` (owner), `board_id` (who may read it: members of that board), `mime_type` (JPEG, PNG or WebP, which is what `compressImage` produces), `size_bytes` (at most 2 MB, checked by the database) and `message_id` (unique: one image per message; the image goes when its message goes).
-- **Flow:** `POST /api/images` stores the row with `message_id` NULL; sending the message attaches it; uploads never attached are purged after 24 hours. Reading goes through an authenticated endpoint that checks board membership.
+- **Flow:** `POST /api/images` (the file itself as the request body, not a Data URL) stores the row with `message_id` NULL; sending the message attaches it; uploads never attached are purged after 24 hours. Reading goes through an authenticated endpoint that checks board membership.
 - **Why this is enough for the MVP:** the browser already shrinks images to at most 1280 px, the cap is 2 MB, there is one local user and a few dozen images, so the database stays small. One file holds everything, a backup is one copy, and a message and its image are saved in one transaction. If this ever outgrows SQLite, add a `storage_path` column and move the bytes to disk or object storage in one migration; nothing else changes.
 - **Sample images** have no pixels in the demo data, so they are rows with `data` NULL and show the existing placeholder.
 - **No orphaned images:** an image row belongs to exactly one message through `images.message_id` (UNIQUE, `ON DELETE CASCADE`), so there is nothing to clean up by hand:

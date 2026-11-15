@@ -1,7 +1,8 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { createSeed, CURRENT_USER_ID, GENERAL_SPACE } from "@/data/seed";
-import { migrateLegacyState } from "./migration";
+import { GENERAL_SPACE } from "@/data/constants";
+import { ApiError, json, parseBoard, parseMessage, request, type RawBoard, type RawMessage } from "./api";
+import { dataUrlToBlob } from "./compressImage";
 import type {
   Card,
   CardInput,
@@ -12,114 +13,46 @@ import type {
   Density,
   Dialog,
   Language,
+  Member,
   Message,
   SpaceId,
   SystemEvent,
+  Text,
   View,
 } from "./types";
 import { currentTime } from "./utils";
 
-export const initialState = () => ({
-  ...createSeed(),
+/** idle: not signed in or not asked yet. loading: first load. ready. error: the server could not be reached. */
+export type BoardStatus = "idle" | "loading" | "ready" | "error";
+
+const emptyData = () => ({
+  columns: [] as Column[],
+  cards: {} as Record<string, Card>,
+  members: {} as Record<string, Member>,
+  messages: {} as Record<SpaceId, Message[]>,
+  unread: {} as Record<SpaceId, number>,
+  currentUserId: "",
   language: "en" as Language,
   density: "comfortable" as Density,
+});
+
+export const initialState = () => ({
+  ...emptyData(),
   view: "board" as View,
   activeSpace: GENERAL_SPACE as SpaceId,
   dialog: null as Dialog | null,
   lastDeleted: null as DeletedCard | null,
+  /** Set when a change was refused or lost and has been undone; the toast shows it. */
+  notice: null as { id: number } | null,
+  boardStatus: "idle" as BoardStatus,
+  /** The language was picked before sign-in (on the sign-in page), so it should be saved once the board is there. */
+  languageChosenEarly: false,
 });
 
-type Data = ReturnType<typeof initialState>;
-type Persisted = Omit<Data, "dialog" | "lastDeleted">;
+type State = ReturnType<typeof initialState>;
+type Snapshot = Pick<State, "columns" | "cards" | "members" | "messages" | "unread" | "language" | "density">;
 
-export const STORE_NAME = "kanban-store";
-export const V1_BACKUP_KEY = "kanban-store-v1-backup";
-export const PRE_RESTORE_BACKUP_KEY = "kanban-store-before-restore-backup";
-
-type StorageStatus = "loading" | "ready" | "error";
-let storageStatus: StorageStatus = "loading";
-const storageStatusListeners = new Set<() => void>();
-let migrationError: unknown;
-
-const notifyStorageStatus = () => storageStatusListeners.forEach((listener) => listener());
-
-export const subscribeStorageStatus = (listener: () => void) => {
-  storageStatusListeners.add(listener);
-  return () => storageStatusListeners.delete(listener);
-};
-
-export const getStorageStatus = () => storageStatus;
-
-function backupRawState(local: Storage, raw: string) {
-  const existingBackup = Object.keys(local).find(
-    (key) => (key === V1_BACKUP_KEY || key.startsWith(`${V1_BACKUP_KEY}:`)) && local.getItem(key) === raw,
-  );
-  if (existingBackup) return existingBackup;
-
-  let key = V1_BACKUP_KEY;
-  let suffix = 0;
-  while (local.getItem(key) !== null) {
-    suffix += 1;
-    key = `${V1_BACKUP_KEY}:${Date.now()}-${String(suffix).padStart(6, "0")}`;
-  }
-  local.setItem(key, raw);
-  if (local.getItem(key) !== raw) throw new Error("Could not verify the V1 data backup.");
-  return key;
-}
-
-function prepareStoredValue(local: Storage, key: string, raw: string | null) {
-  if (raw === null || key !== STORE_NAME) return raw;
-
-  let envelope: unknown;
-  try {
-    envelope = JSON.parse(raw);
-  } catch {
-    backupRawState(local, raw);
-    throw new Error("Saved data is not valid JSON. The original data was backed up and left unchanged.");
-  }
-
-  if (typeof envelope !== "object" || envelope === null || Array.isArray(envelope)) {
-    backupRawState(local, raw);
-    throw new Error("Saved data has an unsupported format. The original data was backed up and left unchanged.");
-  }
-
-  const stored = envelope as { version?: unknown; state?: unknown };
-  if (typeof stored.version === "number") {
-    if (stored.version > 3) throw new Error("Saved data was created by a newer version and was left unchanged.");
-    if (stored.version >= 2) return raw;
-  }
-
-  backupRawState(local, raw);
-  if (typeof stored.version === "number") return raw;
-  return JSON.stringify({ ...stored, version: 0 });
-}
-
-export function restoreV1Backup() {
-  const local = window.localStorage;
-  const backupKey = Object.keys(local)
-    .filter((key) => key === V1_BACKUP_KEY || key.startsWith(`${V1_BACKUP_KEY}:`))
-    .sort()
-    .at(-1);
-  if (!backupKey) throw new Error("No V1 backup is available.");
-  const raw = local.getItem(backupKey);
-  if (raw === null) throw new Error("The selected V1 backup could not be read.");
-  const current = local.getItem(STORE_NAME);
-  if (current !== null && current !== raw) {
-    let currentBackupKey = PRE_RESTORE_BACKUP_KEY;
-    let suffix = 0;
-    while (local.getItem(currentBackupKey) !== null) {
-      suffix += 1;
-      currentBackupKey = `${PRE_RESTORE_BACKUP_KEY}:${Date.now()}-${String(suffix).padStart(6, "0")}`;
-    }
-    local.setItem(currentBackupKey, current);
-    if (local.getItem(currentBackupKey) !== current) throw new Error("The current data could not be backed up before restore.");
-  }
-  local.setItem(STORE_NAME, raw);
-  if (local.getItem(STORE_NAME) !== raw) throw new Error("The V1 backup could not be restored.");
-  return useStore.persist.rehydrate();
-}
-
-export interface Store extends Data {
+export interface Store extends State {
   addCard: (columnId: ColumnId, input: CardInput) => string;
   updateCard: (id: string, input: CardInput) => void;
   deleteCard: (id: string) => void;
@@ -131,7 +64,7 @@ export interface Store extends Data {
   postProgress: (cardId: string) => void;
   addMember: (cardId: string, memberId: string) => void;
   removeMember: (cardId: string, memberId: string) => void;
-  /** Returns false, leaving the conversation unchanged, when the browser's storage is full. */
+  /** Shows the message at once and sends it; an image is uploaded first, as a file. Returns true. */
   sendMessage: (spaceId: SpaceId, content: Pick<ChatMessage, "text" | "image">) => boolean;
   createTaskFromMessage: (spaceId: SpaceId, text: string) => string;
   renameColumn: (id: ColumnId, name: string) => void;
@@ -144,20 +77,14 @@ export interface Store extends Data {
   openRoom: (cardId: string) => void;
   openDialog: (dialog: Dialog) => void;
   closeDialog: () => void;
+  dismissNotice: () => void;
+  /** First load after sign-in. */
+  loadBoard: () => Promise<void>;
+  /** Quietly fetches the board again and replaces the screen with the server's truth. */
+  refresh: () => Promise<void>;
+  /** Forgets everything of the signed-in user (sign-out, ended session). Keeps the light preferences. */
+  reset: () => void;
 }
-
-const stamp = () => ({ id: crypto.randomUUID(), authorId: CURRENT_USER_ID, time: currentTime() });
-const event = (e: SystemEvent) => ({ ...stamp(), type: "event", ...e }) as Message;
-
-const pushMessage = (messages: Data["messages"], spaceId: SpaceId, message: Message) => ({
-  ...messages,
-  [spaceId]: [...(messages[spaceId] ?? []), message],
-});
-
-const markRead = (unread: Data["unread"], spaceId: SpaceId) => {
-  const { [spaceId]: _read, ...rest } = unread;
-  return rest;
-};
 
 export const columnOf = (columns: Column[], cardId: string) =>
   columns.find((c) => c.cardIds.includes(cardId))!;
@@ -171,59 +98,169 @@ export function placeCard(columns: Column[], cardId: string, toColumnId: ColumnI
   });
 }
 
-// A quota error must not surface from inside a store update, so it is recorded here instead.
-let lastWriteFailed = false;
+// ---- sending changes ---------------------------------------------------------------------------------
+//
+// Every change is shown at once and then sent. Changes go out one at a time and in order (a card must exist on
+// the server before it can be moved). If one fails, the screen goes back to how it was before that change, the
+// changes queued behind it are dropped (they were built on it), a toast says so, and the board is fetched again
+// to be sure screen and server agree.
 
-let migrationPending = false;
+interface Op {
+  snapshot: Snapshot;
+  send: () => Promise<void>;
+  epoch: number;
+  /** Changes with the same key that are still waiting merge into one (a slider sends only its latest value). */
+  key?: string;
+}
 
-const storage = createJSONStorage<Persisted>(() => {
-  const local = window.localStorage;
-  return {
-    getItem: (key) => prepareStoredValue(local, key, local.getItem(key)),
-    removeItem: (key) => local.removeItem(key),
-    setItem: (key, value) => {
-      try {
-        local.setItem(key, value);
-        lastWriteFailed = false;
-        migrationPending = false;
-      } catch (error) {
-        lastWriteFailed = true;
-        if (migrationPending) {
-          migrationPending = false;
-          throw error;
-        }
-      }
-    },
-  };
+let queue: Op[] = [];
+let running = false;
+let epoch = 0; // bumped by reset(), so an answer for a signed-out user can never touch the next one
+let noticeId = 0;
+const idleWaiters: (() => void)[] = [];
+
+const takeSnapshot = (s: State): Snapshot => ({
+  columns: s.columns,
+  cards: s.cards,
+  members: s.members,
+  messages: s.messages,
+  unread: s.unread,
+  language: s.language,
+  density: s.density,
 });
+
+function showSaving() {
+  // Also lets tests wait until everything has reached the server.
+  if (typeof document !== "undefined") document.documentElement.dataset.saving = String(running || queue.length > 0);
+}
+
+/** Resolves when nothing is waiting to be sent. */
+export const whenIdle = () => new Promise<void>((resolve) => (running || queue.length ? idleWaiters.push(resolve) : resolve()));
+
+function enqueue(op: Op) {
+  const last = queue.at(-1);
+  if (op.key && last?.key === op.key) {
+    last.send = op.send; // the newest value wins; the first snapshot stays, so a failure undoes the whole burst
+    return;
+  }
+  queue.push(op);
+  void pump();
+}
+
+async function pump() {
+  if (running) return;
+  running = true;
+  showSaving();
+  try {
+    while (queue.length) {
+      const op = queue.shift()!;
+      try {
+        await op.send();
+      } catch (error) {
+        queue = [];
+        if (op.epoch === epoch) rollBack(op.snapshot, error);
+      }
+    }
+  } finally {
+    running = false;
+    showSaving();
+    idleWaiters.splice(0).forEach((resolve) => resolve());
+  }
+}
+
+function rollBack(snapshot: Snapshot, error: unknown) {
+  // A 401 means the session ended: lib/api already sent the user to the sign-in page and cleared the store.
+  if (error instanceof ApiError && error.status === 401) return;
+  useStore.setState({ ...snapshot, lastDeleted: null, notice: { id: ++noticeId } });
+  void useStore.getState().refresh();
+}
+
+// ---- helpers -----------------------------------------------------------------------------------------
+
+const plain = (text: Text) => (typeof text === "string" ? text : text.en);
+const cardBody = (input: CardInput) => ({
+  title: plain(input.title),
+  details: plain(input.details),
+  priority: input.priority,
+  dueDate: input.dueDate,
+  labelIds: input.labelIds,
+  memberIds: input.memberIds,
+});
+
+const stamp = (s: State) => ({ id: crypto.randomUUID(), authorId: s.currentUserId, time: currentTime() });
+const event = (s: State, e: SystemEvent) => ({ ...stamp(s), type: "event", ...e }) as Message;
+
+const pushMessage = (messages: State["messages"], spaceId: SpaceId, message: Message) => ({
+  ...messages,
+  [spaceId]: [...(messages[spaceId] ?? []), message],
+});
+
+const markRead = (unread: State["unread"], spaceId: SpaceId) => {
+  const { [spaceId]: _read, ...rest } = unread;
+  return rest;
+};
+
+const send = (path: string, method: string, body?: unknown) => async () => {
+  await request(path, { method, body: body === undefined ? undefined : json(body) });
+};
+
+// ---- light preferences in the browser ----------------------------------------------------------------
+// Only the open view, the open conversation and the language (for the sign-in page). Everything else is on the server.
+
+const lightStorage = createJSONStorage<Pick<State, "view" | "activeSpace" | "language">>(() => ({
+  getItem: (key) => window.localStorage.getItem(key),
+  removeItem: (key) => window.localStorage.removeItem(key),
+  setItem: (key, value) => {
+    try {
+      window.localStorage.setItem(key, value);
+    } catch {
+      // Preferences are not worth failing for.
+    }
+  },
+}));
 
 export const useStore = create<Store>()(
   persist(
     (set, get) => {
-      const patchCard = (id: string, patch: Partial<Card>) =>
-        set((s) => ({ cards: { ...s.cards, [id]: { ...s.cards[id], ...patch } } }));
+      /** Shows a change now and sends it. `change` is applied to the state; `delivery` runs in the queue. */
+      const commit = (change: Partial<State> | ((s: State) => Partial<State>), delivery: () => Promise<void>, key?: string) => {
+        const snapshot = takeSnapshot(get());
+        set(change as Partial<Store>);
+        enqueue({ snapshot, send: delivery, epoch, key });
+      };
 
-      const logEvent = (spaceId: SpaceId, e: SystemEvent) =>
-        set((s) => ({ messages: pushMessage(s.messages, spaceId, event(e)) }));
+      const patchCard = (s: State, id: string, patch: Partial<Card>) => ({ cards: { ...s.cards, [id]: { ...s.cards[id], ...patch } } });
 
-      const appendCard = (columnId: ColumnId, input: CardInput) => {
-        const id = crypto.randomUUID();
+      const applyBoard = (board: ReturnType<typeof parseBoard>) =>
         set((s) => ({
-          cards: { ...s.cards, [id]: { ...input, id, progress: 0 } },
-          columns: s.columns.map((c) => (c.id === columnId ? { ...c, cardIds: [...c.cardIds, id] } : c)),
+          ...board,
+          activeSpace: s.activeSpace === GENERAL_SPACE || board.cards[s.activeSpace] ? s.activeSpace : GENERAL_SPACE,
         }));
-        return id;
+
+      const readSpace = (spaceId: SpaceId) => {
+        if (!get().unread[spaceId]) return;
+        commit((s) => ({ unread: markRead(s.unread, spaceId) }), send(`/api/spaces/${spaceId}/read`, "POST"));
       };
 
       return {
         ...initialState(),
 
-        addCard: appendCard,
+        addCard: (columnId, input) => {
+          const id = crypto.randomUUID();
+          commit(
+            (s) => ({
+              cards: { ...s.cards, [id]: { ...input, id, progress: 0 } },
+              columns: s.columns.map((c) => (c.id === columnId ? { ...c, cardIds: [...c.cardIds, id] } : c)),
+            }),
+            send("/api/cards", "POST", { id, columnId, ...cardBody(input) }),
+          );
+          return id;
+        },
 
-        updateCard: (id, input) => patchCard(id, input),
+        updateCard: (id, input) => commit((s) => patchCard(s, id, input), send(`/api/cards/${id}`, "PATCH", cardBody(input))),
 
         deleteCard: (id) =>
-          set((s) => {
+          commit((s) => {
             const { [id]: card, ...cards } = s.cards;
             const { [id]: room, ...rest } = s.messages;
             const column = columnOf(s.columns, id);
@@ -233,10 +270,7 @@ export const useStore = create<Store>()(
               ),
             );
             const messages = Object.fromEntries(
-              Object.entries(rest).map(([space, list]) => [
-                space,
-                list.filter((m) => !(m.type === "task" && m.cardId === id)),
-              ]),
+              Object.entries(rest).map(([space, list]) => [space, list.filter((m) => !(m.type === "task" && m.cardId === id))]),
             );
             return {
               lastDeleted: {
@@ -255,12 +289,12 @@ export const useStore = create<Store>()(
               columns: s.columns.map((c) => ({ ...c, cardIds: c.cardIds.filter((x) => x !== id) })),
               activeSpace: s.activeSpace === id ? GENERAL_SPACE : s.activeSpace,
             };
-          }),
+          }, send(`/api/cards/${id}`, "DELETE")),
 
-        undoDelete: () =>
-          set((s) => {
-            const deleted = s.lastDeleted;
-            if (!deleted) return s;
+        undoDelete: () => {
+          const deleted = get().lastDeleted;
+          if (!deleted) return;
+          commit((s) => {
             const { card, columnId, columnIndex, roomIndex, room, unread, announcements, wasActiveSpace } = deleted;
 
             const entries = Object.entries(s.cards);
@@ -281,15 +315,21 @@ export const useStore = create<Store>()(
               activeSpace: wasActiveSpace && s.activeSpace === GENERAL_SPACE ? card.id : s.activeSpace,
               lastDeleted: null,
             };
-          }),
+          }, send(`/api/cards/${deleted.card.id}/restore`, "POST"));
+        },
 
         dismissUndo: () => set({ lastDeleted: null }),
 
         moveCard: (cardId, toColumnId, toIndex) => {
           const from = columnOf(get().columns, cardId);
           if (from.id === toColumnId && from.cardIds.indexOf(cardId) === toIndex) return;
-          set((s) => ({ columns: placeCard(s.columns, cardId, toColumnId, toIndex) }));
-          if (from.id !== toColumnId) logEvent(cardId, { event: "moved", columnId: toColumnId });
+          commit(
+            (s) => ({
+              columns: placeCard(s.columns, cardId, toColumnId, toIndex),
+              messages: from.id !== toColumnId ? pushMessage(s.messages, cardId, event(s, { event: "moved", columnId: toColumnId })) : s.messages,
+            }),
+            send(`/api/cards/${cardId}/move`, "POST", { columnId: toColumnId, index: toIndex }),
+          );
         },
 
         moveCardBy: (cardId, delta) => {
@@ -298,108 +338,170 @@ export const useStore = create<Store>()(
           if (target) moveCard(cardId, target.id, target.cardIds.length);
         },
 
-        setProgress: (cardId, value) => patchCard(cardId, { progress: value }),
+        setProgress: (cardId, value) =>
+          commit((s) => patchCard(s, cardId, { progress: value }), send(`/api/cards/${cardId}`, "PATCH", { progress: value }), `progress:${cardId}`),
 
         postProgress: (cardId) => {
           const { cards, columns } = get();
           const done = columnOf(columns, cardId).id === "done";
-          logEvent(cardId, { event: "progress", value: done ? 100 : cards[cardId].progress });
+          commit(
+            (s) => ({ messages: pushMessage(s.messages, cardId, event(s, { event: "progress", value: done ? 100 : cards[cardId].progress })) }),
+            send(`/api/cards/${cardId}/post-progress`, "POST"),
+          );
         },
 
-        addMember: (cardId, memberId) => {
-          patchCard(cardId, { memberIds: [...get().cards[cardId].memberIds, memberId] });
-          logEvent(cardId, { event: "added", memberId });
-        },
+        addMember: (cardId, memberId) =>
+          commit(
+            (s) => ({
+              ...patchCard(s, cardId, { memberIds: [...s.cards[cardId].memberIds, memberId] }),
+              messages: pushMessage(s.messages, cardId, event(s, { event: "added", memberId })),
+            }),
+            send(`/api/cards/${cardId}/members`, "POST", { userId: memberId }),
+          ),
 
-        removeMember: (cardId, memberId) => {
-          patchCard(cardId, { memberIds: get().cards[cardId].memberIds.filter((m) => m !== memberId) });
-          logEvent(cardId, { event: "removed", memberId });
-        },
+        removeMember: (cardId, memberId) =>
+          commit(
+            (s) => ({
+              ...patchCard(s, cardId, { memberIds: s.cards[cardId].memberIds.filter((m) => m !== memberId) }),
+              messages: pushMessage(s.messages, cardId, event(s, { event: "removed", memberId })),
+            }),
+            send(`/api/cards/${cardId}/members/${memberId}`, "DELETE"),
+          ),
 
         sendMessage: (spaceId, content) => {
-          const before = get().messages;
-          set({ messages: pushMessage(before, spaceId, { ...stamp(), type: "message", ...content }) });
-          if (!lastWriteFailed) return true;
-          set({ messages: before });
-          return false;
+          const shown = { ...stamp(get()), type: "message", ...content } as Message;
+          commit(
+            (s) => ({ messages: pushMessage(s.messages, spaceId, shown) }),
+            async () => {
+              let imageId: string | undefined;
+              if (content.image?.src) {
+                // The compressed picture goes up as a file (the request body), not as text inside the message.
+                const file = dataUrlToBlob(content.image.src);
+                const uploaded = await request(`/api/images?fileName=${encodeURIComponent(content.image.file)}`, {
+                  method: "POST",
+                  body: file,
+                  headers: { "Content-Type": file.type },
+                });
+                imageId = (await uploaded.json()).id;
+              }
+              const response = await request(`/api/spaces/${spaceId}/messages`, {
+                method: "POST",
+                body: json({ text: content.text === undefined ? undefined : plain(content.text), imageId }),
+              });
+              let saved = parseMessage((await response.json()) as RawMessage);
+              // Keep showing the local picture: loading the same one again from the server would make it flicker.
+              if (saved.type === "message" && saved.image && content.image?.src) saved = { ...saved, image: { ...saved.image, src: content.image.src } };
+              set((s) => ({ messages: { ...s.messages, [spaceId]: (s.messages[spaceId] ?? []).map((m) => (m.id === shown.id ? saved : m)) } }));
+            },
+          );
+          return true;
         },
 
         createTaskFromMessage: (spaceId, text) => {
-          const cardId = appendCard("todo", {
-            title: text,
-            details: "",
-            priority: "medium",
-            dueDate: null,
-            labelIds: [],
-            memberIds: [CURRENT_USER_ID],
-          });
-          set((s) => ({ messages: pushMessage(s.messages, spaceId, { ...stamp(), type: "task", cardId }) }));
+          const cardId = crypto.randomUUID();
+          commit(
+            (s) => {
+              const input: CardInput = { title: text, details: "", priority: "medium", dueDate: null, labelIds: [], memberIds: [s.currentUserId] };
+              return {
+                cards: { ...s.cards, [cardId]: { ...input, id: cardId, progress: 0 } },
+                columns: s.columns.map((c) => (c.id === "todo" ? { ...c, cardIds: [...c.cardIds, cardId] } : c)),
+                messages: pushMessage(s.messages, spaceId, { ...stamp(s), type: "task", cardId }),
+              };
+            },
+            send(`/api/spaces/${spaceId}/tasks`, "POST", { text, cardId }),
+          );
           return cardId;
         },
 
         renameColumn: (id, name) =>
-          set((s) => ({
-            columns: s.columns.map((c) => (c.id === id ? { ...c, name: name.trim() || undefined } : c)),
-          })),
+          commit(
+            (s) => ({ columns: s.columns.map((c) => (c.id === id ? { ...c, name: name.trim() || undefined } : c)) }),
+            send(`/api/columns/${id}`, "PATCH", { name: name.trim() }),
+          ),
 
         setWipLimit: (id, limit) =>
-          set((s) => ({ columns: s.columns.map((c) => (c.id === id ? { ...c, wipLimit: limit } : c)) })),
+          commit(
+            (s) => ({ columns: s.columns.map((c) => (c.id === id ? { ...c, wipLimit: limit } : c)) }),
+            send(`/api/columns/${id}`, "PATCH", { wipLimit: limit }),
+          ),
 
-        toggleColumn: (id) =>
-          set((s) => ({ columns: s.columns.map((c) => (c.id === id ? { ...c, collapsed: !c.collapsed } : c)) })),
+        toggleColumn: (id) => {
+          const collapsed = !get().columns.find((c) => c.id === id)!.collapsed;
+          commit(
+            (s) => ({ columns: s.columns.map((c) => (c.id === id ? { ...c, collapsed } : c)) }),
+            send(`/api/columns/${id}`, "PATCH", { collapsed }),
+          );
+        },
 
-        setLanguage: (language) => set({ language }),
+        setLanguage: (language) => {
+          // Before the board is there (the sign-in page) this is only a local choice, saved after sign-in.
+          if (get().boardStatus !== "ready") return set({ language, languageChosenEarly: true });
+          commit({ language }, send("/api/settings", "PATCH", { language }));
+        },
 
-        setDensity: (density) => set({ density }),
+        setDensity: (density) => commit({ density }, send("/api/settings", "PATCH", { density })),
 
-        setView: (view) =>
-          set((s) => ({ view, unread: view === "chat" ? markRead(s.unread, s.activeSpace) : s.unread })),
+        setView: (view) => {
+          set({ view });
+          if (view === "chat") readSpace(get().activeSpace);
+        },
 
-        openSpace: (spaceId) => set((s) => ({ activeSpace: spaceId, unread: markRead(s.unread, spaceId) })),
+        openSpace: (spaceId) => {
+          set({ activeSpace: spaceId });
+          readSpace(spaceId);
+        },
 
-        openRoom: (cardId) =>
-          set((s) => ({ view: "chat", activeSpace: cardId, unread: markRead(s.unread, cardId) })),
+        openRoom: (cardId) => {
+          set({ view: "chat", activeSpace: cardId });
+          readSpace(cardId);
+        },
 
         openDialog: (dialog) => set({ dialog }),
 
         closeDialog: () => set({ dialog: null }),
+
+        dismissNotice: () => set({ notice: null }),
+
+        loadBoard: async () => {
+          const mine = epoch;
+          set({ boardStatus: "loading" });
+          try {
+            const board = parseBoard((await (await request("/api/board")).json()) as RawBoard);
+            if (mine !== epoch) return; // signed out while loading
+            const chosen = get().language;
+            const early = get().languageChosenEarly;
+            applyBoard(early ? { ...board, language: chosen } : board);
+            set({ boardStatus: "ready", languageChosenEarly: false });
+            if (early && chosen !== board.language) enqueue({ snapshot: takeSnapshot(get()), send: send("/api/settings", "PATCH", { language: chosen }), epoch });
+          } catch (error) {
+            if (mine === epoch && !(error instanceof ApiError && error.status === 401)) set({ boardStatus: "error" });
+          }
+        },
+
+        refresh: async () => {
+          const mine = epoch;
+          try {
+            const board = parseBoard((await (await request("/api/board")).json()) as RawBoard);
+            // Only when nothing newer is on its way, so the screen is never overwritten with older data.
+            if (mine === epoch && !running && queue.length === 0) applyBoard(board);
+          } catch {
+            // Unreachable: the screen already shows the state from before the failed change.
+          }
+        },
+
+        reset: () => {
+          epoch += 1;
+          queue = [];
+          const { language: _keep, ...data } = emptyData(); // the language stays: the sign-in page uses it
+          set({ ...data, dialog: null, lastDeleted: null, notice: null, boardStatus: "idle", languageChosenEarly: false, activeSpace: GENERAL_SPACE });
+        },
       };
     },
     {
-      name: STORE_NAME,
-      version: 3,
-      storage,
-      partialize: ({ dialog: _dialog, lastDeleted: _lastDeleted, ...state }) => state,
-      // The owner's name comes from the seed, so browsers with older saved data show it too.
-      merge: (persisted, current) => {
-        const saved = persisted as Persisted | undefined;
-        return {
-          ...current,
-          ...saved,
-          members: { ...(saved?.members ?? current.members), [CURRENT_USER_ID]: current.members[CURRENT_USER_ID] },
-        };
-      },
-      migrate: (persisted, version) => {
-        if (version === 2) return persisted as Persisted;
-        if (version === 0 || version === 1) {
-          const migrated = migrateLegacyState(persisted) as Persisted;
-          migrationPending = true;
-          return migrated;
-        }
-        throw new Error(`Saved data version ${version} cannot be migrated safely.`);
-      },
-      onRehydrateStorage: () => {
-        storageStatus = "loading";
-        migrationError = undefined;
-        notifyStorageStatus();
-        return (_state, error) => {
-          migrationError = error;
-          storageStatus = error ? "error" : "ready";
-          notifyStorageStatus();
-        };
-      },
+      name: "tidy-ui",
+      version: 1,
+      storage: lightStorage,
+      partialize: ({ view, activeSpace, language }) => ({ view, activeSpace, language }),
     },
   ),
 );
-
-export const getStorageError = () => migrationError;

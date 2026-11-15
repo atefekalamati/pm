@@ -59,6 +59,15 @@ def test_create_a_task_from_a_message(me):
     assert me.post(f"/api/spaces/{created['id']}/messages", json={"text": "room works"}).status_code == 201
 
 
+def test_the_client_may_choose_the_new_cards_id(me):
+    chosen = "7d2f5a0c-1c1e-4b60-8a35-5a0f6f6f2a10"
+    made = me.post("/api/spaces/general/tasks", json={"text": "Mine", "cardId": chosen})
+    assert made.status_code == 201 and made.json()["card"]["id"] == chosen
+    assert me.post("/api/spaces/general/tasks", json={"text": "Again", "cardId": chosen}).status_code == 409
+    assert me.post("/api/spaces/general/tasks", json={"text": "Bad", "cardId": "nope"}).status_code == 422
+    assert [c for c in get_board(me)["cards"] if c == chosen] == [chosen]  # the failed ones left nothing behind
+
+
 def test_a_task_can_come_from_a_card_room_and_must_have_text(me):
     source = room(get_board(me), "Task chat room")
     made = me.post(f"/api/spaces/{source}/tasks", json={"text": "Follow up"}).json()

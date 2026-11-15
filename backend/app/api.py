@@ -1,7 +1,8 @@
 import sqlite3
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, field_validator
 
 from app import board, images
@@ -93,11 +94,7 @@ class NewMessage(BaseModel):
 
 class NewTask(BaseModel):
     text: Annotated[str, Field(min_length=1, max_length=500)]
-
-
-class ImageUpload(BaseModel):
-    fileName: Annotated[str, Field(min_length=1, max_length=255)]
-    dataUrl: str
+    cardId: str | None = None  # the client may pick the new card's id (a UUID), like for POST /cards
 
 
 class SettingsChanges(BaseModel):
@@ -195,7 +192,7 @@ def send_message(space_id: str, message: NewMessage, c: Ctx = Depends(ctx)):
 
 @router.post("/spaces/{space_id}/tasks", status_code=201)
 def create_task(space_id: str, task: NewTask, c: Ctx = Depends(ctx)):
-    return board.create_task_from_message(c.conn, c.board_id, c.user_id, space_id, task.text.strip())
+    return board.create_task_from_message(c.conn, c.board_id, c.user_id, space_id, task.text.strip(), task.cardId)
 
 
 @router.post("/spaces/{space_id}/read", status_code=204)
@@ -206,9 +203,22 @@ def mark_read(space_id: str, c: Ctx = Depends(ctx)):
 # ---- images ----------------------------------------------------------------------------------------
 
 
-@router.post("/images", status_code=201)
-def upload_image(upload: ImageUpload, c: Ctx = Depends(ctx)):
-    return images.store_image(c.conn, c.board_id, c.user_id, upload.fileName, upload.dataUrl)
+@router.post(
+    "/images",
+    status_code=201,
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "description": "The image file itself (JPEG, PNG or WebP, at most 2 MB), with its type as Content-Type.",
+            "content": {t: {"schema": {"type": "string", "format": "binary"}} for t in images.IMAGE_TYPES},
+        }
+    },
+)
+async def upload_image(request: Request, fileName: str = Query(min_length=1, max_length=255), c: Ctx = Depends(ctx)):
+    """Uploads an image as a file. Send the message afterwards with the returned id as `imageId`."""
+    data = await request.body()
+    mime_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+    return await run_in_threadpool(images.store_image, c.conn, c.board_id, c.user_id, fileName, mime_type, data)
 
 
 @router.get("/images/{image_id}")

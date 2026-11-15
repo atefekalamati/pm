@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Text } from "@/lib/types";
 import { formatJalaliDay } from "@/lib/utils";
-import { createSeed, labels, seedMembers } from "./seed";
+import { labels } from "./constants";
+import { createSeed, seedMembers } from "./fixtures";
 
 const seed = createSeed(new Date(2026, 10, 8, 12));
 const cards = Object.values(seed.cards);

@@ -88,7 +88,7 @@ def _minutes(clock: str) -> int:
 
 
 def create_board(conn: sqlite3.Connection, owner_id: str, now: datetime | None = None) -> str:
-    """Creates a board for the user with the sample data; returns the board id."""
+    """Creates a board for the user with the sample data (or returns the one they already have); returns the board id."""
     now = now or datetime.now(timezone.utc)
     created = now_iso(now)
     team = {username: row["id"] for username, row in
@@ -99,6 +99,10 @@ def create_board(conn: sqlite3.Connection, owner_id: str, now: datetime | None =
     first_clock = now - timedelta(hours=3) - timedelta(minutes=8 * 60)
 
     with tx(conn):
+        # Checked inside the transaction: two first sign-ins at the same moment must still make one board.
+        existing = conn.execute("SELECT board_id FROM board_members WHERE user_id = ? AND role = 'owner'", (owner_id,)).fetchone()
+        if existing:
+            return existing["board_id"]
         board = new_id()
         conn.execute("INSERT INTO boards (id, created_at) VALUES (?, ?)", (board, created))
         conn.execute("INSERT INTO board_members VALUES (?, ?, 'owner', 1)", (board, owner_id))

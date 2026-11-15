@@ -1,32 +1,36 @@
 # Frontend (Tidy)
 
-A bilingual (English / Persian, LTR / RTL) Kanban board with a team chat. Next.js 16 App Router, React 19, TypeScript, Tailwind CSS 4. It is a client-only app built as a static export (`output: "export"` in `next.config.ts`, output in `out/`), which FastAPI serves at `/`. Sign-in goes through the backend; the board data itself still lives in the browser (`localStorage`) until Part 7.
+A bilingual (English / Persian, LTR / RTL) Kanban board with a team chat. Next.js 16 App Router, React 19, TypeScript, Tailwind CSS 4. It is a client-only app built as a static export (`output: "export"` in `next.config.ts`, output in `out/`), which FastAPI serves at `/`. All data lives on the server (SQLite, through `/api`); the browser keeps only light preferences.
 
-Static export rules: no server-only features (Route Handlers that read the request, Server Actions, `cookies()`, `headers()`, default `next/image` loader). `cacheComponents` and `partialPrefetching` are off because they enable PPR, which `next build` rejects in export mode.
+Static export rules: no server-only features (Route Handlers that read the request, Server Actions, `cookies()`, `headers()`, default `next/image` loader). `cacheComponents` and `partialPrefetching` are off because they enable PPR, which `next build` rejects in export mode. `npm run dev` rewrites `/api/*` to the backend on `localhost:8000` (dev only, in `next.config.ts`).
 
 ## Structure
 
-- `app/` - `layout.tsx` (fonts: Geist, Geist Mono, Vazirmatn; metadata), `page.tsx` (client-only shell: sign-in page when signed out, otherwise Sidebar + Header + Board or Chat, dialogs, undo toast, storage recovery screen), `globals.css` (Tailwind theme and the palette).
-- `components/` - `Board` (dnd-kit context, mouse and keyboard drag), `Column` (rename, WIP limit, collapse), `Card`, `CardDialog` (create / edit card), `Sidebar` (navigation, task rooms, ⋯ account menu with Sign out), `SignIn` (sign-in page with its own language switch), `Header` (breadcrumb, language, density), `Chat` / `Conversation` / `TaskPanel` (general room and one room per card, images, progress, members), `HelpDialog`, `UndoToast`, `JalaliDatePicker`, `Dialog`, `ui` (shared small parts, including the `Logo`).
-- `lib/` - `store.ts` (all state and actions), `session.ts` (sign-in state and `api()`, see below), `types.ts` (data model), `migration.ts` (V1 -> V3 upgrade of saved data), `i18n/`, `utils.ts` (dates, numbers), `compressImage.ts` (uploads resized to 1280px, max 2 MB), `useShortcuts.ts` (keyboard shortcuts).
-- `data/seed.ts` - sample members, labels, cards and messages; `CURRENT_USER_ID`, `GENERAL_SPACE`, `MAX_IMAGE_BYTES`.
+- `app/` - `layout.tsx` (fonts: Geist, Geist Mono, Vazirmatn; metadata), `page.tsx` (the shell, see "Store and the server"), `globals.css` (Tailwind theme and the palette).
+- `components/` - `Board` (dnd-kit context, mouse and keyboard drag), `Column` (rename, WIP limit, collapse), `Card`, `CardDialog` (create / edit card), `Sidebar` (navigation, task rooms, account menu with Sign out), `SignIn`, `Header`, `Chat` / `Conversation` / `TaskPanel` (General and one room per card, images, progress, members), `HelpDialog`, `UndoToast`, `NoticeToast`, `BoardSkeleton`, `Unreachable`, `JalaliDatePicker`, `Dialog`, `ui` (shared small parts, including the `Logo`).
+- `lib/` - `store.ts` (all state and actions), `api.ts` (every backend call and the server-to-store conversion), `session.ts` (who is signed in), `types.ts` (data model), `i18n/`, `utils.ts` (dates, numbers), `compressImage.ts` (uploads resized to 1280px, max 2 MB; also `dataUrlToBlob`), `useShortcuts.ts` (keyboard shortcuts).
+- `data/constants.ts` - `GENERAL_SPACE`, `MAX_IMAGE_BYTES` and the five `labels` (the backend creates the same labels). `data/fixtures.ts` - the sample board as test data only (a copy of `backend/app/seed.py`).
 
-## Store
+## Store and the server
 
-`lib/store.ts` is one Zustand store with `persist` (key `kanban-store`, version 3). Components must read and write data only through it, so it can be pointed at the backend API later.
+`lib/store.ts` is one Zustand store. Components read and write data only through it. The server is the source of truth.
 
-- Data: `columns` (5 fixed ids: `ideas`, `todo`, `doing`, `review`, `done`; optional custom `name`, `cardIds`, `wipLimit`, `collapsed`), `cards`, `members`, `messages` per space (`general` or a card id), `unread`.
-- UI state: `language`, `density`, `view`, `activeSpace` (persisted); `dialog`, `lastDeleted` (not persisted).
-- Actions: `addCard`, `updateCard`, `deleteCard`, `undoDelete`, `dismissUndo`, `moveCard`, `moveCardBy`, `setProgress`, `postProgress`, `addMember`, `removeMember`, `sendMessage`, `createTaskFromMessage`, `renameColumn`, `setWipLimit`, `toggleColumn`, `setLanguage`, `setDensity`, `setView`, `openSpace`, `openRoom`, `openDialog`, `closeDialog`.
-- Uploaded images are stored inline as data URLs inside messages. Before migration the raw old data is backed up (`kanban-store-v1-backup`); if loading fails, `page.tsx` shows the recovery screen.
+- **Loading:** after sign-in `page.tsx` calls `loadBoard()`. `boardStatus` is `idle` / `loading` / `ready` / `error`; until it is `ready` the page shows `BoardSkeleton` (no data, so no sample or empty board can flash), and on `error` (or a failing first `/api/me`) it shows `Unreachable` with a Try again button. `lib/api.ts` `parseBoard` converts the server's board (message `createdAt` UTC becomes the local `time` HH:mm, a null column name becomes "show the default").
+- **Every action shows its change at once and then sends it** (optimistic). Changes go through one queue, one at a time and in order (a card must exist on the server before it can be moved). New cards, tasks and messages get their id on the client (a UUID the server accepts), so the screen needs no id swap. A burst of progress changes on one card merges into its latest value.
+- **A failed change is undone:** if the server refuses it or the connection drops, the screen is restored to how it was before that change, the changes queued behind it are dropped (they were built on it), the undo snapshot is cleared, `notice` is set (the `NoticeToast`, in both languages) and the board is fetched again to be sure screen and server agree. A 401 is different: `lib/api.ts` ends the session and the sign-in page takes over.
+- **Images:** the picture is compressed in the browser as before, then sent as a file (the request body of `POST /api/images?fileName=...`, with its type as Content-Type), and only then the message that names it (`imageId`). The compressed picture stays on screen until the next load.
+- **Unread** is computed by the server; opening a conversation clears it on screen and tells the server. **Language and density** are user settings on the server (`PATCH /api/settings`). A language picked on the sign-in page is saved after sign-in.
+- `whenIdle()` resolves when nothing is waiting to be sent; the app also sets `data-saving` on `<html>` so tests can wait before a reload.
+- **In the browser** only `view`, `activeSpace` and `language` are kept (`localStorage` key `tidy-ui`): the last open screen, and the language for the sign-in page. Never data.
+- `reset()` (sign-out, ended session) clears everything of the user.
 
 ## Session
 
-`lib/session.ts` is a small in-memory Zustand store (`checking` / `signed-in` / `signed-out`, plus the user from `/api/me`); the session itself is an HttpOnly cookie. Call the backend only through `api()`: any `401` ends the session, closes dialogs and shows the sign-in page. `page.tsx` checks `/api/me` on load, on tab focus or visibility, on a Back/Forward cache restore and every minute. In `npm run dev`, `next.config.ts` rewrites `/api/*` to the backend on `localhost:8000`.
+`lib/session.ts` is a small in-memory Zustand store (`checking` / `signed-in` / `signed-out` / `unreachable`, plus the user from `/api/me`); the session itself is an HttpOnly cookie. Call the backend only through `api()` / `request()` in `lib/api.ts` (`request` throws on a failure so the store can undo). `page.tsx` checks `/api/me` on load, on tab focus or visibility, on a Back/Forward cache restore and every minute.
 
 ## i18n
 
-`lib/i18n/en.ts` and `fa.ts` are plain dictionaries with the same keys (checked by `i18n.test.ts`). `useT()` returns `t` (strings), `L` (resolves sample text stored as `{ en, fa }`; user text is a plain string and never translated), `n` / `pct` (localized digits), `date` (Jalali display; dates are stored as Gregorian `yyyy-MM-dd`) and `columnName`. `page.tsx` sets `lang` and `dir` on `<html>`. Layout uses only logical CSS properties (`ms-*`, `pe-*`, `start`, `end`).
+`lib/i18n/en.ts` and `fa.ts` are plain dictionaries with the same keys (checked by `i18n.test.ts`). `useT()` returns `t` (strings), `L` (resolves sample text stored as `{ en, fa }`; text a user writes is a plain string and never translated), `n` / `pct` (localized digits), `date` (Jalali display; dates are stored as Gregorian `yyyy-MM-dd`) and `columnName`. `page.tsx` sets `lang` and `dir` on `<html>`. Layout uses only logical CSS properties (`ms-*`, `pe-*`, `start`, `end`).
 
 ## Palette: Linen Sky
 
@@ -34,8 +38,11 @@ Defined once in `app/globals.css` as role-named variables inside `@theme` (`--co
 
 ## Tests
 
-- Unit (Vitest + Testing Library, jsdom): `npm test`. Files sit next to the code (`*.test.ts(x)`); `vitest.setup.ts` clears `localStorage` and resets the store before each test.
-- End-to-end (Playwright, Chromium at 1860x900): `npx playwright test`. Specs in `e2e/` (`auth`, `board`, `chat`, `sidebar`, shared `helpers.ts`). The shared `test` signs in through the API (`login()`) before each test; `auth.spec.ts` starts signed out. The config starts the backend (`uv run uvicorn` on 8000) and `npm run dev` on port 3000, or reuses them if already running. To test the Docker container instead, start it and set `PLAYWRIGHT_BASE_URL=http://localhost:8000`; no dev server is started then.
+- **Unit** (Vitest + Testing Library, jsdom): `npm test`. Files sit next to the code. `vitest.setup.ts` loads the sample board (`data/fixtures.ts`) into the store before each test and installs a fake server (`vitest.server.ts`): every request is recorded (`sent()`), succeeds by default, and `failRequests(part, status | "network")` makes some fail, so rollback can be tested. A test's own requests are awaited with `whenIdle()`.
+- **End-to-end** (Playwright, Chromium at 1860x900, timezone UTC): `npx playwright test`. Specs in `e2e/`: `board`, `chat`, `sidebar`, `auth`, `persistence` (every kind of change survives a refresh, sign-out/in, a new browser; and, run in two phases around a restart, a container restart), `rollback` (a mocked failing server: refused or dropped, in both languages, plus the loading skeleton and the unreachable page), `isolation` (a second user never sees the first user's board).
+- **Test users:** Playwright tests share one server, so each test makes its own user through `POST /api/e2e/users`, which exists only when the server runs with `TIDY_E2E=1` (`helpers.ts` `createUser` / `login`). The dev-server run starts the backend itself in that mode with its own database (`backend/data/e2e.db`). To test the Docker container use a separate one so your real database stays clean:
+  `$env:TIDY_PORT="8001"; $env:TIDY_E2E="1"; docker compose -p tidy-e2e up -d --build --wait`, then `$env:PLAYWRIGHT_BASE_URL="http://localhost:8001"; npx playwright test`, then `docker compose -p tidy-e2e down -v`.
+- **Container restart check:** with that container running, `PERSIST_PHASE=write PERSIST_USER=restart-check` and `-g "container restart"`, then `docker compose -p tidy-e2e down` and `up -d --wait` (without `-v`), then the same with `PERSIST_PHASE=verify`.
 - Also: `npm run lint`, `npm run build` (writes `out/`).
 
 <!-- BEGIN:nextjs-agent-rules -->

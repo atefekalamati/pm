@@ -1,4 +1,4 @@
-import { PNG, boardNav, button, card, column, composer, expect, makeImage, openRoom, reload, setEn, setFa, test } from "./helpers";
+import { boardNav, button, card, column, composer, expect, makeImage, openRoom, reload, setEn, setFa, test } from "./helpers";
 
 const panel = (page: Parameters<typeof composer>[0]) => page.getByRole("complementary", { name: "Task info" });
 
@@ -161,21 +161,6 @@ test.describe("in the chat section", () => {
     await expect(page.getByTestId("message")).toHaveCount(before);
   });
 
-  test("shows a short error when localStorage is full and loses nothing", async ({ page }) => {
-    await composer(page).fill("before");
-    await composer(page).press("Enter");
-    await page.evaluate(() => {
-      Storage.prototype.setItem = () => {
-        throw new DOMException("full", "QuotaExceededError");
-      };
-    });
-    await page.getByLabel("Attach image").setInputFiles({ name: "x.png", mimeType: "image/png", buffer: PNG });
-    await expect(page.locator("p[role=alert]")).toHaveText("Browser storage is full. The image was not sent.");
-    await expect(page.getByRole("img", { name: "x.png" })).toHaveCount(0);
-    await reload(page);
-    await expect(page.getByText("before")).toBeVisible();
-  });
-
   test("creates a task from a message and announces it", async ({ page }) => {
     await composer(page).fill("Prepare the release notes");
     await button(page, "Create task").click();
@@ -255,79 +240,4 @@ test.describe("task panel", () => {
     await expect(page.getByRole("heading", { level: 2, name: "# General" })).toBeVisible();
     await expect(page.getByTestId("task-created")).toHaveCount(0);
   });
-});
-
-test("V1 data is backed up, migrated, and retained after reload", async ({ page }) => {
-  await page.evaluate(() => {
-    localStorage.setItem(
-      "kanban-store",
-      JSON.stringify({
-        version: 0,
-        state: {
-          language: "fa",
-          columns: [{ id: "todo", cardIds: ["old"] }],
-          cards: {
-            old: {
-              id: "old",
-              title: "کارت قدیمی",
-              details: "توضیحات حفظ‌شده",
-              priority: "low",
-              labelIds: ["legacy-label"],
-              assigneeId: "x",
-            },
-          },
-        },
-      }),
-    );
-  });
-  const rawV1 = await page.evaluate(() => localStorage.getItem("kanban-store"));
-  await reload(page);
-  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-  await expect(page.getByTestId("card")).toHaveCount(1);
-  await expect(card(page, "کارت قدیمی")).toBeVisible();
-  await expect(card(page, "کارت قدیمی")).toContainText("legacy-label");
-  await expect(page.getByTestId("column-todo")).toContainText("کارت قدیمی");
-  const saved = await page.evaluate(() => ({
-    backup: localStorage.getItem("kanban-store-v1-backup"),
-    data: JSON.parse(localStorage.getItem("kanban-store")!),
-  }));
-  expect(saved.backup).toBe(rawV1);
-  expect(saved.data.version).toBe(3);
-  expect(saved.data.state.cards.old).toMatchObject({
-    details: "توضیحات حفظ‌شده",
-    memberIds: ["x"],
-  });
-  await reload(page);
-  await expect(page.getByTestId("card")).toHaveCount(1);
-  await expect(card(page, "کارت قدیمی")).toBeVisible();
-  await expect(card(page, "کارت قدیمی")).toContainText("legacy-label");
-});
-
-test("migration stops safely when a raw V1 backup cannot be written", async ({ page }) => {
-  const rawV1 = JSON.stringify({
-    version: 0,
-    state: {
-      columns: [{ id: "todo", cardIds: ["old"] }],
-      cards: { old: { id: "old", title: "Keep me", priority: "low" } },
-    },
-  });
-  await page.evaluate((raw) => {
-    localStorage.setItem("kanban-store", raw);
-  }, rawV1);
-  await page.addInitScript(() => {
-    const nativeSetItem = Storage.prototype.setItem;
-    Storage.prototype.setItem = function (key, value) {
-      if (key === "kanban-store-v1-backup") throw new DOMException("full", "QuotaExceededError");
-      nativeSetItem.call(this, key, value);
-    };
-  });
-  await page.reload();
-  await expect(page.locator("section[role=alert]")).toContainText("Saved data could not be loaded safely");
-  await expect(page.getByTestId("card")).toHaveCount(0);
-  const saved = await page.evaluate(() => ({
-    current: localStorage.getItem("kanban-store"),
-    backup: localStorage.getItem("kanban-store-v1-backup"),
-  }));
-  expect(saved.current).toBe(rawV1);
-  expect(saved.backup).toBeNull();
 });

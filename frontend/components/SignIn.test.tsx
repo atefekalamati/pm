@@ -1,12 +1,14 @@
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api, checkSession, signOut, useSession } from "@/lib/session";
+import { api } from "@/lib/api";
+import { checkSession, retrySession, signOut, useSession } from "@/lib/session";
 import { useStore } from "@/lib/store";
 import Sidebar from "./Sidebar";
 import SignIn from "./SignIn";
 
 const ME = {
+  id: "user-1",
   username: "user",
   name: { en: "Atefe Kalamati", fa: "عاطفه کلماتی" },
   initials: { en: "AK", fa: "عک" },
@@ -84,11 +86,17 @@ describe("SignIn", () => {
   });
 });
 
+/** Like the page: the sidebar is only there while signed in. */
+function SignedInShell() {
+  const status = useSession((s) => s.status);
+  return status === "signed-in" ? <Sidebar /> : null;
+}
+
 describe("account menu", () => {
   it("opens from ⋯ and signs out", async () => {
     useSession.setState({ status: "signed-in", user: ME });
     fetchMock.mockResolvedValueOnce(reply(204));
-    render(<Sidebar />);
+    render(<SignedInShell />);
     const toggle = within(screen.getByTestId("profile")).getByRole("button", { name: "Account menu" });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     await userEvent.click(toggle);
@@ -132,10 +140,35 @@ describe("session", () => {
     expect(useSession.getState().status).toBe("signed-in");
   });
 
-  it("shows sign-in instead of a blank page when the first check cannot reach the server", async () => {
+  it("says the server is unreachable, not signed out, when the first check cannot reach it", async () => {
     fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     await checkSession();
-    expect(useSession.getState().status).toBe("signed-out");
+    expect(useSession.getState().status).toBe("unreachable");
+  });
+
+  it("treats a failing server on the first check as unreachable too", async () => {
+    fetchMock.mockResolvedValueOnce(reply(500));
+    await checkSession();
+    expect(useSession.getState().status).toBe("unreachable");
+  });
+
+  it("tries again when asked, and signs in or out depending on the answer", async () => {
+    useSession.setState({ status: "unreachable", user: null });
+    fetchMock.mockResolvedValueOnce(reply(200, ME));
+    retrySession();
+    expect(useSession.getState().status).toBe("checking");
+    await vi.waitFor(() => expect(useSession.getState().status).toBe("signed-in"));
+    useSession.setState({ status: "unreachable", user: null });
+    fetchMock.mockResolvedValueOnce(reply(401));
+    retrySession();
+    await vi.waitFor(() => expect(useSession.getState().status).toBe("signed-out"));
+  });
+
+  it("clears the board of the signed-out user", async () => {
+    useSession.setState({ status: "signed-in", user: ME });
+    fetchMock.mockResolvedValueOnce(reply(204));
+    await signOut();
+    expect(useStore.getState()).toMatchObject({ boardStatus: "idle", cards: {}, columns: [], currentUserId: "" });
   });
 
   it("signs out locally even if the server cannot be reached", async () => {

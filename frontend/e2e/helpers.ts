@@ -1,32 +1,53 @@
-import { expect, test as base, type Locator, type Page } from "@playwright/test";
+import { randomUUID } from "node:crypto";
+import { expect, test as base, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 
 /** 17 Aban 1405, the "today" of the sample data. */
 export const TODAY = new Date("2026-11-08T11:00:00");
+export const TODAY_ISO = "2026-11-08";
 
 export const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
   "base64",
 );
 
+/** The real sample user (sign-in form tests). */
 export const CREDENTIALS = { username: "user", password: "password" };
 
-/** Signs in through the API; the page shares the cookie. */
-export async function login(page: Page) {
-  const response = await page.request.post("/api/login", { data: CREDENTIALS });
-  expect(response.ok()).toBe(true);
+export interface TestUser {
+  username: string;
+  password: string;
 }
 
-/** Every test starts signed in, on the board. Sign-in itself is tested in auth.spec.ts. */
-export const test = base.extend<{ errors: string[] }>({
+/**
+ * A new user with their own sample board, dated from TODAY. The server must run with TIDY_E2E=1
+ * (backend/app/e2e.py): Playwright tests share one server, so each test gets a user nobody else touches.
+ */
+export async function createUser(request: APIRequestContext, username = `e2e-${randomUUID().slice(0, 8)}`): Promise<TestUser> {
+  const response = await request.post("/api/e2e/users", { data: { username, today: TODAY_ISO } });
+  expect(response.status(), "is the server running with TIDY_E2E=1?").toBe(201);
+  return response.json();
+}
+
+/** Signs in through the API; the page shares the cookie. Makes a new user unless one is given. */
+export async function login(page: Page, user?: TestUser) {
+  const who = user ?? (await createUser(page.request));
+  const response = await page.request.post("/api/login", { data: who });
+  expect(response.ok()).toBe(true);
+  return who;
+}
+
+/** Every test starts signed in as its own new user, on the board. Sign-in itself is tested in auth.spec.ts. */
+export const test = base.extend<{ errors: string[]; user: TestUser }>({
+  user: async ({ page }, provide) => provide(await createUser(page.request)),
   errors: [
-    async ({ page }, use) => {
+    async ({ page, user }, use) => {
       const errors: string[] = [];
       page.on("pageerror", (e) => errors.push(e.message));
       page.on("console", (m) => {
         if (m.type() === "error") errors.push(m.text());
       });
       await page.clock.setFixedTime(TODAY);
-      await login(page);
+      await login(page, user);
       await page.goto("/");
       await expect(page.getByTestId("card").first()).toBeVisible();
       await use(errors);
@@ -36,7 +57,7 @@ export const test = base.extend<{ errors: string[] }>({
   ],
 });
 
-export { expect };
+export { expect, base as plainTest };
 
 export const column = (page: Page, id: string) => page.getByTestId(`column-${id}`);
 export const card = (scope: Page | Locator, title: string) => scope.getByTestId("card").filter({ hasText: title });
@@ -53,8 +74,14 @@ export async function openRoom(page: Page, title: string) {
   await expect(page.getByRole("heading", { level: 2, name: title })).toBeVisible();
 }
 
-/** Reloads and waits until the persisted app has rendered. */
+/** Waits until every change shown on screen has reached the server (the app sets data-saving on <html>). */
+export async function settled(page: Page) {
+  await page.waitForFunction(() => document.documentElement.dataset.saving !== "true");
+}
+
+/** Reloads, after the last change has been saved, and waits until the board has been loaded from the server. */
 export async function reload(page: Page) {
+  await settled(page);
   await page.reload();
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 }

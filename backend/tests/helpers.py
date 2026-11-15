@@ -1,4 +1,4 @@
-import base64
+from urllib.parse import quote
 
 
 def name(text):
@@ -39,12 +39,13 @@ def events(board, space):
     return [m for m in board["messages"].get(space, []) if m["type"] == "event"]
 
 
-def data_url(content=b"\x89PNG-fake-bytes", mime="image/png"):
-    return f"data:{mime};base64," + base64.b64encode(content).decode()
+def post_image(client, content=b"\x89PNG-fake-bytes", mime="image/png", file_name="shot.png"):
+    """Uploads the file itself: the bytes are the request body and the type is the Content-Type."""
+    return client.post(f"/api/images?fileName={quote(file_name)}", content=content, headers={"Content-Type": mime})
 
 
 def upload(client, content=b"\x89PNG-fake-bytes", mime="image/png", file_name="shot.png"):
-    response = client.post("/api/images", json={"fileName": file_name, "dataUrl": data_url(content, mime)})
+    response = post_image(client, content, mime, file_name)
     assert response.status_code == 201, response.text
     return response.json()
 

@@ -1,49 +1,52 @@
 import { create } from "zustand";
+import { api, json, onUnauthorized } from "./api";
 import { useStore } from "./store";
 import type { LocalizedText } from "./types";
 
 export interface User {
+  id: string;
   username: string;
   name: LocalizedText;
   initials: LocalizedText;
 }
 
-type Status = "checking" | "signed-in" | "signed-out";
+/** unreachable: the server could not be reached (or failed) when the page opened. */
+type Status = "checking" | "signed-in" | "signed-out" | "unreachable";
 
 /** Who is signed in. Kept in memory only: the session itself is an HttpOnly cookie set by the backend. */
 export const useSession = create<{ status: Status; user: User | null }>(() => ({ status: "checking", user: null }));
 
+/** Back to the sign-in page, with nothing of the last user left on the screen. */
 function endSession() {
-  useStore.getState().closeDialog();
+  // The page leaves the board first, then the data goes: nothing ever renders a board without its data.
   useSession.setState({ status: "signed-out", user: null });
+  useStore.getState().reset();
 }
 
-/** Every call to the backend goes through here, so an expired session anywhere returns the user to sign-in. */
-export async function api(path: string, init: RequestInit = {}) {
-  const response = await fetch(path, {
-    ...init,
-    cache: "no-store",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json", ...init.headers },
-  });
-  if (response.status === 401 && path !== "/api/login") endSession();
-  return response;
-}
+// Any answer "not signed in" from the server, anywhere, ends the session here.
+onUnauthorized(endSession);
 
-/** Asks the backend whether the session is still valid. Network errors keep the current state. */
+/** Asks the backend whether the session is still valid. A brief network error keeps the current state. */
 export async function checkSession() {
+  const firstTime = () => useSession.getState().status === "checking";
   try {
     const response = await api("/api/me");
     if (response.ok) useSession.setState({ status: "signed-in", user: await response.json() });
+    else if (response.status !== 401 && firstTime()) useSession.setState({ status: "unreachable" });
   } catch {
-    // The server cannot be reached. On first load show the sign-in page rather than nothing.
-    if (useSession.getState().status === "checking") useSession.setState({ status: "signed-out" });
+    if (firstTime()) useSession.setState({ status: "unreachable" });
   }
+}
+
+/** The "Try again" button of the unreachable page. */
+export function retrySession() {
+  useSession.setState({ status: "checking" });
+  void checkSession();
 }
 
 export async function signIn(username: string, password: string): Promise<"ok" | "invalid" | "offline"> {
   try {
-    const response = await api("/api/login", { method: "POST", body: JSON.stringify({ username, password }) });
+    const response = await api("/api/login", { method: "POST", body: json({ username, password }) });
     if (response.status === 401) return "invalid";
     if (!response.ok) return "offline";
     useSession.setState({ status: "signed-in", user: await response.json() });

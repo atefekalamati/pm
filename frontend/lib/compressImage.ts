@@ -44,3 +44,11 @@ export async function compressImage(file: File): Promise<string> {
 }
 
 export const dataUrlBytes = (dataUrl: string) => Math.ceil(((dataUrl.length - dataUrl.indexOf(",") - 1) * 3) / 4);
+
+/** The picture as a file to upload. Reads the data URL directly, no network involved. */
+export function dataUrlToBlob(dataUrl: string): Blob {
+  const comma = dataUrl.indexOf(",");
+  const type = /^data:([^;,]+)/.exec(dataUrl.slice(0, comma))?.[1] ?? "application/octet-stream";
+  const bytes = Uint8Array.from(atob(dataUrl.slice(comma + 1)), (c) => c.charCodeAt(0));
+  return new Blob([bytes], { type });
+}

@@ -113,6 +113,22 @@ def test_first_sign_in_creates_the_sample_board_once(client, conn):
     assert count(conn, "board_members") == 4
 
 
+def test_many_first_sign_ins_at_once_still_make_one_board(client, conn):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    def one_sign_in(_):
+        return TestClient(app).post("/api/login", json={"username": "user", "password": "password"}).status_code
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        statuses = list(pool.map(one_sign_in, range(8)))
+    assert statuses == [200] * 8
+    assert count(conn, "boards") == 1 and count(conn, "cards") == 10 and count(conn, "board_members") == 4
+
+
 # Every route except login, health and the static files needs a session.
 PROTECTED = [
     ("get", "/api/me", None),
@@ -132,7 +148,7 @@ PROTECTED = [
     ("post", "/api/spaces/general/messages", {"text": "hi"}),
     ("post", "/api/spaces/general/tasks", {"text": "hi"}),
     ("post", "/api/spaces/general/read", None),
-    ("post", "/api/images", {"fileName": "a.png", "dataUrl": "data:image/png;base64,AAAA"}),
+    ("post", "/api/images?fileName=a.png", None),
     ("get", "/api/images/x", None),
 ]
 

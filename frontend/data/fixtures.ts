@@ -1,10 +1,12 @@
 import { addDays } from "date-fns-jalali";
-import type { Card, Column, ColumnId, Label, Member, Message, Priority, Text } from "@/lib/types";
+import type { Card, Column, ColumnId, Member, Message, Priority, Text } from "@/lib/types";
 import { toISODate } from "@/lib/utils";
+import { GENERAL_SPACE } from "./constants";
 
+/** Test fixtures only: a copy of the sample board that the backend creates at first sign-in (backend/app/seed.py). */
 export const CURRENT_USER_ID = "sara";
-export const GENERAL_SPACE = "general";
-export const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+export { GENERAL_SPACE };
+
 
 export const seedMembers: Record<string, Member> = {
   sara: { id: "sara", name: { en: "Atefe Kalamati", fa: "عاطفه کلماتی" }, initials: { en: "AK", fa: "عک" } },
@@ -12,14 +14,6 @@ export const seedMembers: Record<string, Member> = {
   maryam: { id: "maryam", name: { en: "Maryam Karimi", fa: "مریم کریمی" }, initials: { en: "MK", fa: "مک" } },
   reza: { id: "reza", name: { en: "Reza Mohammadi", fa: "رضا محمدی" }, initials: { en: "RM", fa: "رم" } },
 };
-
-export const labels: Label[] = [
-  { id: "design", name: { en: "Design", fa: "طراحی" } },
-  { id: "frontend", name: { en: "Frontend", fa: "فرانت‌اند" } },
-  { id: "bug", name: { en: "Bug", fa: "باگ" } },
-  { id: "docs", name: { en: "Docs", fa: "مستندات" } },
-  { id: "testing", name: { en: "Testing", fa: "تست" } },
-];
 
 interface SeedCard {
   id: string;

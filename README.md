@@ -14,7 +14,7 @@ Requires Docker Desktop (Windows: with WSL2).
 ## Tests
 
 - Backend: `cd backend && uv run pytest`
-- Frontend: `cd frontend && npm test && npx playwright test`
+- Frontend: `cd frontend && npm test && npx playwright test` (the Playwright run starts its own test backend; see `frontend/AGENTS.md` for testing the Docker container)
 
 API docs (while it runs): http://localhost:8000/docs. The database is `/data/tidy.db` on the `tidy-data` Docker volume, so it survives restarts.
 

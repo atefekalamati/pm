@@ -5,7 +5,7 @@ import { useT } from "@/lib/i18n";
 import { signOut } from "@/lib/session";
 import { columnOf, useStore } from "@/lib/store";
 import type { Card } from "@/lib/types";
-import { CURRENT_USER_ID, GENERAL_SPACE } from "@/data/seed";
+import { GENERAL_SPACE } from "@/data/constants";
 import { Avatar, BoardIcon, ChatIcon, ChevronDownIcon, DotsIcon, Logo, Segmented, SegmentButton, cx } from "./ui";
 
 const activeItem = "bg-column shadow-[inset_0_0_0_1px_var(--color-selected-ring)]";
@@ -131,7 +131,7 @@ export default function Sidebar() {
   const isBoard = useStore((s) => s.view === "board");
   const generalActive = useStore((s) => s.view === "chat" && s.activeSpace === GENERAL_SPACE);
   const cards = useStore((s) => s.cards);
-  const me = useStore((s) => s.members[CURRENT_USER_ID]);
+  const me = useStore((s) => s.members[s.currentUserId]);
   const unread = useStore((s) => Object.values(s.unread).reduce((sum, x) => sum + x, 0));
   const setView = useStore((s) => s.setView);
   const setLanguage = useStore((s) => s.setLanguage);

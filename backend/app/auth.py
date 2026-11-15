@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
 from pydantic import BaseModel
 
-from app.board import board_id_of, user_json
+from app.board import user_json
 from app.db import get_db, now_iso, tx
 from app.security import hash_password, hash_token, verify_password
 from app.seed import create_board
@@ -53,8 +53,7 @@ def login(credentials: Credentials, response: Response, conn: sqlite3.Connection
     with tx(conn):
         expires = now_iso(datetime.now(timezone.utc) + timedelta(seconds=SESSION_SECONDS))
         conn.execute("INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)", (hash_token(token), user["id"], now_iso(), expires))
-    if board_id_of(conn, user["id"]) is None:
-        create_board(conn, user["id"])  # first sign-in: the sample board, in both languages
+    create_board(conn, user["id"])  # first sign-in: the sample board, in both languages (nothing if they already have one)
     response.set_cookie(COOKIE_NAME, token, max_age=SESSION_SECONDS, httponly=True, samesite="lax", path="/")
     return public_user(user)
 

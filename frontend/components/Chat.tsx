@@ -1,7 +1,7 @@
 "use client";
 
 import { useStore } from "@/lib/store";
-import { GENERAL_SPACE } from "@/data/seed";
+import { GENERAL_SPACE } from "@/data/constants";
 import Conversation from "./Conversation";
 import TaskPanel from "./TaskPanel";
 

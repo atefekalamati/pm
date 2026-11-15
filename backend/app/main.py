@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 
-from app import api, auth, db
+from app import api, auth, db, e2e
 
 # The Next.js static export (frontend/out), copied here by the Dockerfile.
 STATIC_DIR = Path(os.environ.get("STATIC_DIR", Path(__file__).resolve().parent.parent / "static"))
@@ -40,6 +40,8 @@ def health():
 
 app.include_router(auth.router)
 app.include_router(api.router)
+if os.environ.get("TIDY_E2E") == "1":  # test servers only: lets each Playwright test create its own user
+    app.include_router(e2e.router)
 
 # Registered last so /api routes take precedence. Absent when the backend runs next to `npm run dev`.
 if STATIC_DIR.is_dir():

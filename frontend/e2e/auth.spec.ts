@@ -1,8 +1,10 @@
 import { expect, test as base, type Page } from "@playwright/test";
-import { CREDENTIALS } from "./helpers";
+import { createUser, settled, type TestUser } from "./helpers";
 
 /** These tests start signed out, so they use the plain test instead of the signed-in one from helpers. */
-const test = base.extend<{ errors: string[] }>({
+const test = base.extend<{ errors: string[]; account: TestUser }>({
+  // Every test signs in as its own new user (the language and the board are saved per user on the server).
+  account: async ({ page }, provide) => provide(await createUser(page.request)),
   errors: [
     async ({ page }, use) => {
       const errors: string[] = [];
@@ -27,9 +29,9 @@ async function submit(page: Page, username: string, password: string) {
   await page.getByRole("button", { name: "Sign in" }).click();
 }
 
-async function signInWithForm(page: Page) {
+async function signInWithForm(page: Page, account: TestUser) {
   await page.goto("/");
-  await submit(page, CREDENTIALS.username, CREDENTIALS.password);
+  await submit(page, account.username, account.password);
   await expect(board(page)).toBeVisible();
 }
 
@@ -64,16 +66,16 @@ test("a wrong password or username gets the same message, without saying which",
   await expect(page.getByTestId("card")).toHaveCount(0);
 });
 
-test("signs in, shows Atefe Kalamati, and a refresh keeps the user signed in", async ({ page }) => {
-  await signInWithForm(page);
+test("signs in, shows Atefe Kalamati, and a refresh keeps the user signed in", async ({ page, account }) => {
+  await signInWithForm(page, account);
   await expect(page.getByTestId("profile")).toContainText("Atefe Kalamati");
   await page.reload();
   await expect(board(page)).toBeVisible();
   await expect(signInHeading(page)).toHaveCount(0);
 });
 
-test("signs out from the ⋯ menu; refresh, Back and Forward do not show the board", async ({ page }) => {
-  await signInWithForm(page);
+test("signs out from the ⋯ menu; refresh, Back and Forward do not show the board", async ({ page, account }) => {
+  await signInWithForm(page, account);
   await signOutWithMenu(page);
 
   await page.reload();
@@ -85,8 +87,8 @@ test("signs out from the ⋯ menu; refresh, Back and Forward do not show the boa
   await expect(page.getByTestId("card")).toHaveCount(0);
 });
 
-test("Back to a cached board after signing out elsewhere shows sign-in", async ({ page }) => {
-  await signInWithForm(page);
+test("Back to a cached board after signing out elsewhere shows sign-in", async ({ page, account }) => {
+  await signInWithForm(page, account);
   await page.goto("/api/health");
   // Signed out from another tab while this one is on another page.
   expect((await page.request.post("/api/logout")).status()).toBe(204);
@@ -95,7 +97,7 @@ test("Back to a cached board after signing out elsewhere shows sign-in", async (
   await expect(page.getByTestId("card")).toHaveCount(0);
 });
 
-test("the sign-in page has its own language switch and works right-to-left in Persian", async ({ page }) => {
+test("the sign-in page has its own language switch and works right-to-left in Persian", async ({ page, account }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "فارسی" }).click();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
@@ -111,14 +113,19 @@ test("the sign-in page has its own language switch and works right-to-left in Pe
   const label = (await page.getByText("نام کاربری", { exact: true }).boundingBox())!;
   expect(form.x + form.width - (label.x + label.width)).toBeLessThan(40);
 
-  await page.getByLabel("رمز عبور").fill("password");
+  await page.getByLabel("نام کاربری").fill(account.username);
+  await page.getByLabel("رمز عبور").fill(account.password);
   await page.getByRole("button", { name: "ورود" }).click();
   await expect(board(page)).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+
+  // The language chosen on the sign-in page is saved for the user, so it follows them to any browser.
+  await settled(page);
+  expect(await (await page.request.get("/api/settings")).json()).toMatchObject({ language: "fa" });
 });
 
-test("a session that ends while the board is open returns to sign-in when the tab is used again", async ({ page }) => {
-  await signInWithForm(page);
+test("a session that ends while the board is open returns to sign-in when the tab is used again", async ({ page, account }) => {
+  await signInWithForm(page, account);
   await page.keyboard.press("?");
   await expect(page.getByRole("dialog")).toBeVisible();
 
@@ -129,14 +136,14 @@ test("a session that ends while the board is open returns to sign-in when the ta
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
   // Signing in again brings the board back without the old dialog.
-  await submit(page, CREDENTIALS.username, CREDENTIALS.password);
+  await submit(page, account.username, account.password);
   await expect(board(page)).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
-test("an idle open board notices an ended session within a minute", async ({ page }) => {
+test("an idle open board notices an ended session within a minute", async ({ page, account }) => {
   await page.clock.install();
-  await signInWithForm(page);
+  await signInWithForm(page, account);
   await page.context().clearCookies();
   await page.clock.runFor(61_000);
   await expect(signInHeading(page)).toBeVisible();
