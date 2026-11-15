@@ -16,4 +16,6 @@ Requires Docker Desktop (Windows: with WSL2).
 - Backend: `cd backend && uv run pytest`
 - Frontend: `cd frontend && npm test && npx playwright test`
 
-Plan and progress: `docs/PLAN.md`.
+API docs (while it runs): http://localhost:8000/docs. The database is `/data/tidy.db` on the `tidy-data` Docker volume, so it survives restarts.
+
+Plan and progress: `docs/PLAN.md`; database design: `docs/DATABASE.md`.

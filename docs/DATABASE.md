@@ -1,8 +1,8 @@
 # Database design (Part 5)
 
-Status: **design for review, no code yet.** SQLite, one file (`/data/tidy.db` in the container), created automatically when missing.
+Status: **approved design, implemented in Part 6** (`backend/migrations/0001_init.sql`). SQLite, one file (`/data/tidy.db` in the container), created automatically when missing.
 
-- `docs/schema.json` is the machine-readable source of truth (14 tables, 16 named indexes). Part 6 turns it into `backend/migrations/0001_init.sql`, and a pytest compares the created database with `schema.json` so the two cannot drift.
+- `docs/schema.json` is the machine-readable source of truth (14 tables, 16 named indexes). `backend/migrations/0001_init.sql` is generated from it, and `tests/test_migrations.py` compares the created database with `schema.json` (tables, columns, types, nullability, keys, foreign keys with ON DELETE, indexes, STRICT) so the two cannot drift.
 - This file gives the reasons. The ER diagram and the table sections in section 1 are generated from `schema.json`.
 - It holds everything the app stores, including chat messages, images, user settings, unread state and the AI conversation. Nothing but light UI state (such as the last open view) stays in the browser.
 
@@ -297,7 +297,15 @@ The AI assistant conversation, one continuous thread per user and board.
 
 **Decision:** `cards.position` is a **gapped integer** per column (1024, 2048, 3072, ...); the column is read with `ORDER BY position, seq`. Columns use plain `position` 1 to 5 (the five columns never move in the MVP; if they ever do, the same technique applies).
 
-- **Append:** last position + 1024. **Insert between a and b:** the integer midpoint `(a + b) / 2`. **If there is no room** (b - a < 2): renumber that column once (one `UPDATE` using `ROW_NUMBER()`), then insert. With a 1024 gap this takes about ten inserts into the same spot, so it is rare.
+- **Append:** last position + 1024. **Insert between a and b:** the integer midpoint `(a + b) / 2`. **If there is no room** (b - a < 2, which includes equal positions), the whole column is renumbered, then the card is inserted. With a 1024 gap this takes about ten inserts into the same spot, so it is rare.
+- **How the renumbering works:**
+  1. A move request is one transaction (`BEGIN IMMEDIATE` ... `COMMIT`). The renumbering, the card's own `UPDATE` and the "moved" event row all happen inside it, so they commit together or not at all, and other readers never see a half-renumbered column (WAL readers see the state from before or after the commit).
+  2. The renumbering is **one statement** over the target column: every card gets `ROW_NUMBER() * 1024` in its current order (`position`, then `seq`), so relative order never changes. The card being moved is left out, since it is about to get a new position.
+  3. **Deleted cards are included**, so a later Undo still lands in the right place.
+  4. Afterwards neighbours are at least 1024 apart, so the insert always succeeds. Cost: one write per card in that column (a column has tens of cards), once in a long while.
+  5. If anything fails during the request, the transaction rolls back and every position is exactly as before.
+
+  Part 6 tests this: twelve inserts into the same gap (the renumbering happens exactly once, on the 11th, inside a transaction, order intact and the column respaced), a request that fails right after the renumbering (nothing changes, and the same move works afterwards), deleted cards keeping their place, and equal positions.
 - **Cost of one drag-and-drop move** (measured on the scratch database): inside a column **1 write** (`UPDATE cards`); to another column **2 writes** (`UPDATE cards` plus the "moved" event row in the card's room). A renumber is one statement over that column's cards.
 - **Why not dense indexes (0, 1, 2, ...):** every move rewrites all cards between the old and new place, in two columns. **Why not fractional `REAL`:** also 1 write, but floating-point precision runs out and equal values need care; integers give the same result with exact arithmetic.
 - `position` is not UNIQUE: ties are broken by `seq`, so restoring a deleted card can never fail on a clash.
@@ -311,7 +319,7 @@ The AI assistant conversation, one continuous thread per user and board.
 - **Deleting a card has three steps:**
   1. **Delete** sets `cards.deleted_at`. Nothing else changes: the room, its messages and images and the read state stay. The board query skips the card, and the message query hides its "task created" announcement in General (it joins `cards.deleted_at`).
   2. **Undo** (the 6-second toast) clears `deleted_at`: the card is back in the same place with its room, announcement and unread count, which is what `lastDeleted` does in the browser today.
-  3. **Purge:** cards deleted more than 24 hours ago are removed for real at startup and when the next card is deleted. The cascade then removes the card, its label and assignee rows, its room and all messages in it, the announcement in General, their images and read state. In the check, one card removed 1 space, 6 messages, 2 label rows, 3 assignee rows and 1 read marker.
+  3. **Purge:** cards deleted more than 24 hours ago are removed for real. There is **no separate scheduled job**: one function, `purge()`, runs **at server startup and alongside every new card delete**. The cascade then removes the card, its label and assignee rows, its room and all messages in it, the announcement in General, their images and read state. In the check, one card removed 1 space, 6 messages, 2 label rows, 3 assignee rows and 1 read marker. The same function also removes uploads that never got a message (older than 24 hours) and expired sessions, so there is one place for all housekeeping. A server that is never restarted and never deletes a card simply keeps old rows a little longer, which costs nothing.
 - **Why soft delete and not delete + restore from a client copy:** Undo is one `UPDATE`, nothing large crosses the network, and it survives a page refresh. The cost is that the deleted card's data stays for up to 24 hours (a value you can change).
 - Messages are never edited or deleted in the MVP.
 
@@ -323,6 +331,13 @@ The AI assistant conversation, one continuous thread per user and board.
 - **Flow:** `POST /api/images` stores the row with `message_id` NULL; sending the message attaches it; uploads never attached are purged after 24 hours. Reading goes through an authenticated endpoint that checks board membership.
 - **Why this is enough for the MVP:** the browser already shrinks images to at most 1280 px, the cap is 2 MB, there is one local user and a few dozen images, so the database stays small. One file holds everything, a backup is one copy, and a message and its image are saved in one transaction. If this ever outgrows SQLite, add a `storage_path` column and move the bytes to disk or object storage in one migration; nothing else changes.
 - **Sample images** have no pixels in the demo data, so they are rows with `data` NULL and show the existing placeholder.
+- **No orphaned images:** an image row belongs to exactly one message through `images.message_id` (UNIQUE, `ON DELETE CASCADE`), so there is nothing to clean up by hand:
+  - **A message is deleted:** its image row, bytes included, is deleted by the same statement. The MVP never deletes single messages, but the rule is in the database, so a future feature cannot leave an orphan.
+  - **A card is purged:** the cascade goes card, room, messages, images, and the card's "task created" announcement in General goes the same way. While the card is only soft-deleted (Undo is possible) its images stay.
+  - **A board is deleted:** images go with it (`board_id` cascade).
+  - **An upload never gets a message** (the user picked a file and did not send): its `message_id` stays NULL and `purge()` removes it after 24 hours. A send that fails (for example a bad image id) rolls the message back, so the upload simply stays unattached until reused or purged.
+  - **Sample placeholders** go with their messages like any other image.
+  - Part 6 tests each case, and that no image points to a message that does not exist.
 
 ## 6. Unread
 
@@ -352,9 +367,10 @@ To add real users later:
 1. Sign-up or invitation flow and password rules (code only).
 2. Drop `uq_user_one_owned_board` (one `DROP INDEX`) so a user can own several boards; add a board switcher.
 3. An invitation is an insert into `board_members`.
-4. More roles (for example viewer): widen the `role` check. SQLite cannot change a CHECK in place, so this is the small-table rebuild from section 9.
-5. Optional nullable columns added with `ALTER TABLE ... ADD COLUMN`: `cards.created_by`, `updated_at` or a version for concurrent edits.
-6. A policy for deleting users; today RESTRICT protects history.
+4. **An explicit account status.** Today "can sign in" is inferred from `password_hash` being NULL. That is fine for the MVP (a teammate who never signs in), but it cannot tell a teammate who was never meant to sign in from someone invited who has not set a password yet, or from someone who was blocked. Later, add a `users.status` column with the values `active`, `invited` and `disabled` (`ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','invited','disabled'))`, a plain migration), fill it in (a NULL password hash becomes `invited` or `disabled`, depending on intent), and make sign-in require `status = 'active'` and a password. Disabling a user then needs no password change, and invitations get a proper state.
+5. More roles (for example viewer): widen the `role` check. SQLite cannot change a CHECK in place, so this is the small-table rebuild from section 9.
+6. Optional nullable columns added with `ALTER TABLE ... ADD COLUMN`: `cards.created_by`, `updated_at` or a version for concurrent edits.
+7. A policy for deleting users; today RESTRICT protects history.
 
 Deliberately left out of the MVP: email, password reset, OAuth, workspaces, roles beyond owner and member.
 
@@ -364,7 +380,7 @@ Deliberately left out of the MVP: email, password reset, OAuth, workspaces, role
 - **`PRAGMA user_version`** holds the number of the last applied file. For each newer file the runner does: begin, run the script, set `user_version`, commit. SQLite DDL is transactional, so a failed migration leaves the database as it was.
 - **Safety:** before migrating an existing database the runner copies it with SQLite's backup API to `tidy.db.bak-v<N>`. Migrations only go forward (no down scripts). If the database is newer than the newest file, the app refuses to start.
 - **What needs a rebuild:** adding a nullable column or an index is a plain `ALTER` / `CREATE`. Changing a CHECK, a foreign key or NOT NULL uses the standard recipe: `PRAGMA foreign_keys=OFF`, begin, create the new table, copy the rows, drop the old, rename, recreate indexes, `PRAGMA foreign_key_check`, commit, `PRAGMA foreign_keys=ON`.
-- `schema.json` carries `schema_version`; each migration updates it, and the Part 6 test fails if the real database and the JSON differ.
+- `schema.json` carries `schema_version`; each migration updates it, and `tests/test_migrations.py` fails if the real database and the JSON differ (checked by deliberately breaking the JSON: the test fails). The runner itself is tested there too: a new database, an upgrade with a backup, a failing migration rolled back, a newer database refused.
 
 ## 10. Indexes, PRAGMAs and time
 
@@ -418,7 +434,7 @@ The check also found a real flaw, now fixed: a CHECK that evaluates to NULL coun
 2. Soft delete with a 24-hour purge to support Undo (section 4).
 3. A `spaces` table for General and card rooms (section 4).
 4. Entity ids are UUID text; `messages` and `ai_messages` use integer ids because they need an order (section 6).
-5. `password_hash` NULL means "cannot sign in", with no separate `can_login` column (an earlier plan draft had one).
+5. `password_hash` NULL means "cannot sign in", with no separate `can_login` column (an earlier plan draft had one). A real `status` column is the later improvement (section 8).
 6. The AI is marked with `by_ai` on event rows, not with an AI user (section 7).
 7. Sessions are stored as a hash (section 7).
 8. Sample message times are shifted to end before the board's creation time (section 2).

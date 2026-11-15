@@ -1,22 +1,33 @@
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 
-from app import auth
+from app import api, auth, db
 
 # The Next.js static export (frontend/out), copied here by the Dockerfile.
 STATIC_DIR = Path(os.environ.get("STATIC_DIR", Path(__file__).resolve().parent.parent / "static"))
 
-app = FastAPI(title="Tidy")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Creates the database file when missing, applies migrations, adds the team users, purges old data.
+    path = db.db_path()
+    db.init_db(path)
+    app.state.db_path = path
+    yield
+
+
+app = FastAPI(title="Tidy", lifespan=lifespan)
 
 
 @app.middleware("http")
 async def no_store_api(request: Request, call_next):
     """API answers depend on the session, so the browser must never reuse them (e.g. on Back)."""
     response = await call_next(request)
-    if request.url.path.startswith("/api/"):
+    if request.url.path.startswith("/api/") and "cache-control" not in response.headers:
         response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -28,6 +39,7 @@ def health():
 
 
 app.include_router(auth.router)
+app.include_router(api.router)
 
 # Registered last so /api routes take precedence. Absent when the backend runs next to `npm run dev`.
 if STATIC_DIR.is_dir():

@@ -1,61 +1,36 @@
-import hashlib
-import hmac
 import secrets
-import time
+import sqlite3
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
 from pydantic import BaseModel
 
+from app.board import board_id_of, user_json
+from app.db import get_db, now_iso, tx
+from app.security import hash_password, hash_token, verify_password
+from app.seed import create_board
+
 COOKIE_NAME = "tidy_session"
 SESSION_SECONDS = 7 * 24 * 60 * 60
 
-
-def hash_password(password: str, salt: bytes | None = None) -> str:
-    salt = salt or secrets.token_bytes(16)
-    digest = hashlib.scrypt(password.encode(), salt=salt, n=2**14, r=8, p=1)
-    return f"{salt.hex()}:{digest.hex()}"
+# Checked for unknown users too, so a wrong username takes as long as a wrong password.
+_DUMMY_HASH = hash_password("not-a-real-password")
 
 
-def verify_password(password: str, stored: str) -> bool:
-    salt, digest = stored.split(":")
-    return hmac.compare_digest(hash_password(password, bytes.fromhex(salt)).split(":")[1], digest)
+def public_user(row: sqlite3.Row) -> dict:
+    return {**user_json(row), "username": row["username"]}
 
 
-def _user(username: str, en: str, fa: str, initials_en: str, initials_fa: str, password: str | None = None):
-    return {
-        "username": username,
-        "name": {"en": en, "fa": fa},
-        "initials": {"en": initials_en, "fa": initials_fa},
-        "password_hash": hash_password(password) if password else None,
-    }
-
-
-# Kept in memory until the database arrives (Part 6). Only "user" can sign in;
-# the other team members have no password.
-USERS = {
-    u["username"]: u
-    for u in [
-        _user("user", "Atefe Kalamati", "عاطفه کلماتی", "AK", "عک", password="password"),
-        _user("ali", "Ali Rezaei", "علی رضایی", "AR", "عر"),
-        _user("maryam", "Maryam Karimi", "مریم کریمی", "MK", "مک"),
-        _user("reza", "Reza Mohammadi", "رضا محمدی", "RM", "رم"),
-    ]
-}
-
-# token -> (username, expires at, as time.time())
-SESSIONS: dict[str, tuple[str, float]] = {}
-
-
-def public_user(user: dict) -> dict:
-    return {k: user[k] for k in ("username", "name", "initials")}
-
-
-def current_user(tidy_session: str | None = Cookie(default=None)) -> dict:
-    session = SESSIONS.get(tidy_session or "")
-    if not session or session[1] < time.time():
-        SESSIONS.pop(tidy_session or "", None)
+def current_user(tidy_session: str | None = Cookie(default=None), conn: sqlite3.Connection = Depends(get_db)) -> sqlite3.Row:
+    row = None
+    if tidy_session:
+        row = conn.execute(
+            "SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?",
+            (hash_token(tidy_session), now_iso()),
+        ).fetchone()
+    if not row:
         raise HTTPException(status_code=401, detail="Not signed in")
-    return USERS[session[0]]
+    return row
 
 
 class Credentials(BaseModel):
@@ -67,23 +42,35 @@ router = APIRouter(prefix="/api")
 
 
 @router.post("/login")
-def login(credentials: Credentials, response: Response):
-    user = USERS.get(credentials.username)
-    if not user or not user["password_hash"] or not verify_password(credentials.password, user["password_hash"]):
-        # One message for both cases, so it does not reveal which part was wrong.
+def login(credentials: Credentials, response: Response, conn: sqlite3.Connection = Depends(get_db)):
+    user = conn.execute("SELECT * FROM users WHERE username = ?", (credentials.username,)).fetchone()
+    stored = user["password_hash"] if user else None
+    ok = verify_password(credentials.password, stored or _DUMMY_HASH) and stored is not None
+    if not ok:
+        # One message for every failure, so it does not reveal which part was wrong (or that a user exists).
         raise HTTPException(status_code=401, detail="Invalid username or password")
     token = secrets.token_urlsafe(32)
-    SESSIONS[token] = (user["username"], time.time() + SESSION_SECONDS)
+    with tx(conn):
+        expires = now_iso(datetime.now(timezone.utc) + timedelta(seconds=SESSION_SECONDS))
+        conn.execute("INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)", (hash_token(token), user["id"], now_iso(), expires))
+    if board_id_of(conn, user["id"]) is None:
+        create_board(conn, user["id"])  # first sign-in: the sample board, in both languages
     response.set_cookie(COOKIE_NAME, token, max_age=SESSION_SECONDS, httponly=True, samesite="lax", path="/")
     return public_user(user)
 
 
 @router.post("/logout", status_code=204)
-def logout(response: Response, tidy_session: str | None = Cookie(default=None), _user: dict = Depends(current_user)):
-    SESSIONS.pop(tidy_session or "", None)
+def logout(
+    response: Response,
+    tidy_session: str | None = Cookie(default=None),
+    conn: sqlite3.Connection = Depends(get_db),
+    _user: sqlite3.Row = Depends(current_user),
+):
+    with tx(conn):
+        conn.execute("DELETE FROM sessions WHERE token_hash = ?", (hash_token(tidy_session or ""),))
     response.delete_cookie(COOKIE_NAME, path="/", httponly=True, samesite="lax")
 
 
 @router.get("/me")
-def me(user: dict = Depends(current_user)):
+def me(user: sqlite3.Row = Depends(current_user)):
     return public_user(user)

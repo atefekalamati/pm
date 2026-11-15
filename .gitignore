@@ -186,8 +186,12 @@ npm-debug.log*
 !.env.example
 *.pem
 
-# SQLite database
+# SQLite database (and its WAL files and pre-migration backups)
 *.db
+*.db-wal
+*.db-shm
+*.db.bak-*
+backend/data/
 
 # Playwright
 test-results/

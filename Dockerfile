@@ -20,6 +20,7 @@ COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY backend/app ./app
+COPY backend/migrations ./migrations
 COPY --from=frontend /frontend/out ./static
 
 EXPOSE 8000
