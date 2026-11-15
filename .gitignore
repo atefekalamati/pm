@@ -173,3 +173,20 @@ cython_debug/
 .pypirc
 
 .DS_Store
+
+# Node / Next.js (frontend)
+node_modules/
+.next/
+out/
+coverage/
+next-env.d.ts
+*.tsbuildinfo
+npm-debug.log*
+.env*
+*.pem
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
