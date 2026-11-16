@@ -278,7 +278,7 @@
         {"name": "user_id", "type": "TEXT", "nullable": false},
         {"name": "role", "type": "TEXT", "nullable": false, "check": "role IN ('user','assistant')"},
         {"name": "content", "type": "TEXT", "nullable": false},
-        {"name": "changes", "type": "TEXT", "nullable": true, "check": "changes IS NULL OR json_valid(changes)", "note": "JSON list of the board changes the assistant applied (or failed to apply) for this reply"},
+        {"name": "changes", "type": "TEXT", "nullable": true, "check": "changes IS NULL OR json_valid(changes)", "note": "JSON object {\"applied\": [changes the assistant made], \"problem\": null or why nothing was changed} for this reply"},
         {"name": "created_at", "type": "TEXT", "nullable": false, "note": "UTC ISO 8601, e.g. 2026-11-15T08:30:00.000Z"}
       ],
       "foreign_keys": [

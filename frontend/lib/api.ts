@@ -58,7 +58,7 @@ export interface RawBoard {
 
 /** The server stamps messages with a UTC time; the screens show the local HH:mm. */
 export function parseMessage(raw: RawMessage): Message {
-  const { createdAt, byAi: _byAi, ...rest } = raw;
+  const { createdAt, ...rest } = raw;
   return { ...rest, time: currentTime(new Date(createdAt)) } as Message;
 }
 

@@ -24,6 +24,18 @@ def no_ai_in_the_environment(monkeypatch):
         monkeypatch.delenv(name, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def sleeps(monkeypatch):
+    """The AI retry waits 2 seconds; tests record the wait instead of sleeping."""
+    from types import SimpleNamespace
+
+    from app import ai
+
+    waited: list[float] = []
+    monkeypatch.setattr(ai, "time", SimpleNamespace(sleep=waited.append))
+    return waited
+
+
 @pytest.fixture
 def db_file(tmp_path, monkeypatch):
     """A fresh database file for every test (created by the app at startup)."""

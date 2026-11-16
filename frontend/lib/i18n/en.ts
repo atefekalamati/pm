@@ -10,6 +10,7 @@ export const en = {
   wsName: "Carabin team",
   channels: "CHANNELS",
   owner: "Workspace owner",
+  aiAssistant: "AI assistant",
   accountMenu: "Account menu",
   signOut: "Sign out",
   signIn: {
@@ -107,6 +108,8 @@ export const en = {
     removed: (who: string, member: string) => `${who} removed ${member}`,
     moved: (who: string, column: string) => `${who} moved this to ${column}`,
     created: (who: string) => `${who} created a task`,
+    cardCreated: (who: string) => `${who} created this card`,
+    updated: (who: string) => `${who} updated this card`,
   },
   dialog: {
     newCard: "New card",

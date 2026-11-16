@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, field_validator
 
-from app import ai, board, images
+from app import ai, assistant, board, images
 from app.auth import current_user
 from app.db import get_db, tx
 
@@ -95,6 +95,10 @@ class NewMessage(BaseModel):
 class NewTask(BaseModel):
     text: Annotated[str, Field(min_length=1, max_length=500)]
     cardId: str | None = None  # the client may pick the new card's id (a UUID), like for POST /cards
+
+
+class AiQuestion(BaseModel):
+    message: Annotated[str, Field(min_length=1, max_length=4000)]
 
 
 class SettingsChanges(BaseModel):
@@ -220,6 +224,29 @@ def ai_test(_user: sqlite3.Row = Depends(current_user)):
     except ai.AiUnavailable as error:
         raise HTTPException(status_code=502, detail=str(error)) from None
     return {"question": question, "answer": answer.strip(), "model": ai.model()}
+
+
+@router.post("/ai/chat")
+def ai_chat(question: AiQuestion, c: Ctx = Depends(ctx)):
+    """Ask the assistant. It answers in the language of the question and may change the board; every change it
+    makes is applied together or not at all. `applied` lists the changes and `board` is the updated board. When the
+    model's answer is unusable nothing changes and `reply` is a plain message (with `problem` saying why).
+    Failures of the service are 502/503 with a detail in both languages: {"en": ..., "fa": ...}."""
+    text = question.message.strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="The message is empty")
+    try:
+        return assistant.chat(c.conn, c.board_id, c.user_id, text)
+    except ai.AiNotConfigured:
+        raise HTTPException(status_code=503, detail=assistant.NOT_CONFIGURED) from None
+    except ai.AiUnavailable as error:
+        raise HTTPException(status_code=503 if error.status in ai.RETRY_STATUSES else 502, detail=assistant.unavailable_message(error)) from None
+
+
+@router.get("/ai/history")
+def ai_history(c: Ctx = Depends(ctx)):
+    """The last messages of the conversation with the assistant (the ones the model is sent), oldest first."""
+    return assistant.history(c.conn, c.board_id, c.user_id)
 
 
 # ---- images ----------------------------------------------------------------------------------------

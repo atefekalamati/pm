@@ -42,7 +42,14 @@ def connect(path: Path | str) -> sqlite3.Connection:
 
 @contextmanager
 def tx(conn: sqlite3.Connection):
-    """One write transaction: commits on success, rolls back on any error."""
+    """One write transaction: commits on success, rolls back on any error.
+
+    Inside a transaction that is already open it joins that one instead (SQLite cannot nest), so several
+    changes can be made together: the outermost `tx` commits all of them or, on any error, none.
+    """
+    if conn.in_transaction:
+        yield conn
+        return
     conn.execute("BEGIN IMMEDIATE")
     try:
         yield conn

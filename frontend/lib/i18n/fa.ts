@@ -13,6 +13,7 @@ export const fa: Dictionary = {
   wsName: "تیم کارابین",
   channels: "کانال‌ها",
   owner: "مالک فضای کار",
+  aiAssistant: "دستیار هوش مصنوعی",
   accountMenu: "منوی حساب",
   signOut: "خروج",
   signIn: {
@@ -110,6 +111,8 @@ export const fa: Dictionary = {
     removed: (who, member) => `${who} این عضو را حذف ${verb(who, "کرد")}: ${member}`,
     moved: (who, column) => `${who} این کار را منتقل ${verb(who, "کرد")} به ${column}`,
     created: (who) => `${who} یک کار ${verb(who, "ساخت")}`,
+    cardCreated: (who) => `${who} این کارت را ${verb(who, "ساخت")}`,
+    updated: (who) => `${who} این کارت را ویرایش ${verb(who, "کرد")}`,
   },
   dialog: {
     newCard: "کارت جدید",

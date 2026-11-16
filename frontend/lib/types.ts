@@ -72,9 +72,12 @@ export interface ChatMessage extends MessageBase {
 export type SystemEvent =
   | { event: "progress"; value: number }
   | { event: "added" | "removed"; memberId: string }
-  | { event: "moved"; columnId: ColumnId };
+  | { event: "moved"; columnId: ColumnId }
+  | { event: "created" }
+  | { event: "updated" };
 
-export type EventMessage = MessageBase & { type: "event" } & SystemEvent;
+/** `byAi`: the AI assistant did it (at the user's request); the room shows "AI assistant" instead of the user. */
+export type EventMessage = MessageBase & { type: "event"; byAi?: boolean } & SystemEvent;
 
 export interface TaskMessage extends MessageBase {
   type: "task";

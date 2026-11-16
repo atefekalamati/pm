@@ -10,12 +10,15 @@ The key is never logged, never returned and never put in an error message.
 """
 
 import os
+import time
 
 import openai
 
 DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_MODEL = "openai/gpt-oss-120b"
 TIMEOUT_SECONDS = 60
+RETRY_STATUSES = (429, 503)  # rate limit, busy service: worth one more try
+RETRY_DELAY_SECONDS = 2.0
 
 
 class AiNotConfigured(Exception):
@@ -49,7 +52,7 @@ def is_configured() -> bool:
 def _client() -> openai.OpenAI:
     if not is_configured():
         raise AiNotConfigured("AI is not configured")
-    return openai.OpenAI(api_key=_key(), base_url=base_url(), timeout=TIMEOUT_SECONDS, max_retries=1)
+    return openai.OpenAI(api_key=_key(), base_url=base_url(), timeout=TIMEOUT_SECONDS, max_retries=0)
 
 
 def _safe(text: str) -> str:
@@ -59,7 +62,20 @@ def _safe(text: str) -> str:
 
 
 def complete(messages: list[dict], response_format: dict | None = None) -> str:
-    """Sends the conversation to the model and returns its answer as text."""
+    """Sends the conversation to the model and returns its answer as text.
+
+    A rate limit (429) or a busy service (503) is tried once more after a short delay; anything else is not retried.
+    """
+    try:
+        return _complete_once(messages, response_format)
+    except AiUnavailable as error:
+        if error.status not in RETRY_STATUSES:
+            raise
+    time.sleep(RETRY_DELAY_SECONDS)
+    return _complete_once(messages, response_format)
+
+
+def _complete_once(messages: list[dict], response_format: dict | None) -> str:
     extra = {"response_format": response_format} if response_format else {}
     try:
         response = _client().chat.completions.create(model=model(), messages=messages, **extra)

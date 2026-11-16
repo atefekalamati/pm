@@ -17,16 +17,18 @@ REQUEST = httpx.Request("POST", "https://example.test/v1/chat/completions")
 class FakeClient:
     """Stands in for openai.OpenAI. Records what it was asked and answers or fails as told."""
 
-    def __init__(self, answer: str | None = "4", error: Exception | None = None):
+    def __init__(self, answer: str | None = "4", error: Exception | None = None, outcomes: list | None = None):
         self.calls: list[dict] = []
-        self._answer, self._error = answer, error
+        # `outcomes`: one result per call, in order (an Exception is raised, a string is the answer).
+        self._outcomes = outcomes if outcomes is not None else [error if error else answer]
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
 
     def _create(self, **kwargs):
         self.calls.append(kwargs)
-        if self._error:
-            raise self._error
-        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=self._answer))])
+        outcome = self._outcomes[min(len(self.calls), len(self._outcomes)) - 1]
+        if isinstance(outcome, Exception):
+            raise outcome
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=outcome))])
 
 
 def status_error(status: int, message: str = "nope") -> openai.APIStatusError:
@@ -126,6 +128,46 @@ def test_service_problems_become_one_clear_error(monkeypatch, configured, error,
         ai.complete([{"role": "user", "content": "x"}])
     assert caught.value.status == status
     assert words in str(caught.value)
+
+
+# ---- retry: a rate limit or a busy service is tried once more ----------------------------------------
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_a_rate_limit_or_busy_service_is_tried_once_more_after_a_short_delay(monkeypatch, configured, sleeps, status):
+    client = use(monkeypatch, FakeClient(outcomes=[status_error(status), "4"]))
+    assert ai.complete([{"role": "user", "content": "x"}]) == "4"
+    assert len(client.calls) == 2 and sleeps == [ai.RETRY_DELAY_SECONDS]
+    assert 0 < ai.RETRY_DELAY_SECONDS <= 5  # short
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_it_gives_up_after_one_retry(monkeypatch, configured, sleeps, status):
+    client = use(monkeypatch, FakeClient(error=status_error(status)))
+    with pytest.raises(ai.AiUnavailable) as caught:
+        ai.complete([{"role": "user", "content": "x"}])
+    assert caught.value.status == status
+    assert len(client.calls) == 2 and len(sleeps) == 1  # exactly one retry, never more
+
+
+@pytest.mark.parametrize("error", [status_error(401), status_error(403), status_error(404), status_error(500), openai.APITimeoutError(request=REQUEST), openai.APIConnectionError(request=REQUEST)])
+def test_other_problems_are_not_retried(monkeypatch, configured, sleeps, error):
+    client = use(monkeypatch, FakeClient(error=error))
+    with pytest.raises(ai.AiUnavailable):
+        ai.complete([{"role": "user", "content": "x"}])
+    assert len(client.calls) == 1 and sleeps == []
+
+
+def test_the_client_itself_does_not_retry_so_there_is_only_the_one_visible_retry(monkeypatch, configured):
+    seen = {}
+
+    class Capture:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+    monkeypatch.setattr(ai.openai, "OpenAI", Capture)
+    ai._client()
+    assert seen["max_retries"] == 0
 
 
 def test_the_key_is_removed_from_whatever_the_service_says_and_it_is_shortened(monkeypatch, configured):
