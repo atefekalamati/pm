@@ -181,3 +181,28 @@
     border-radius: 999px;
   }
 }
+
+/* A card the AI assistant just created, edited or moved flashes once, so the change is easy to spot. */
+@keyframes ai-flash {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 55%, transparent), var(--shadow-card);
+  }
+  35% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-primary) 35%, transparent), var(--shadow-card);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 0%, transparent), var(--shadow-card);
+  }
+}
+
+.ai-flash {
+  animation: ai-flash 1.8s ease-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-flash {
+    animation: none;
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}

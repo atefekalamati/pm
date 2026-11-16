@@ -3,6 +3,7 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useT } from "@/lib/i18n";
+import { useAssistant } from "@/lib/assistant";
 import { useStore } from "@/lib/store";
 import type { Card as CardType } from "@/lib/types";
 import { dueState, focusCard, type DueState } from "@/lib/utils";
@@ -121,6 +122,7 @@ export default function SortableCard({
   const openRoom = useStore((s) => s.openRoom);
   const moveCardBy = useStore((s) => s.moveCardBy);
   const deleteCard = useStore((s) => s.deleteCard);
+  const changedByAi = useAssistant((s) => s.highlight.includes(card.id));
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id: card.id,
   });
@@ -131,9 +133,11 @@ export default function SortableCard({
       style={{ transform: CSS.Transform.toString(transform), transition }}
       data-testid="card"
       data-card-id={card.id}
+      data-ai-changed={changedByAi || undefined}
       className={cx(
         cardShell,
         "group relative flex flex-col",
+        changedByAi && "ai-flash",
         density(compact),
         isDragging
           ? "border-dashed border-dashed-line bg-transparent"

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { useAssistant } from "./assistant";
 import { columnOf, useStore } from "./store";
 import type { ColumnId } from "./types";
 import { focusCard } from "./utils";
@@ -41,6 +42,9 @@ export function useShortcuts(enabled = true) {
       switch (e.code) {
         case "KeyG":
           lastG = Date.now();
+          break;
+        case "KeyA":
+          useAssistant.getState().toggle();
           break;
         case "KeyL":
           store.setLanguage(store.language === "en" ? "fa" : "en");

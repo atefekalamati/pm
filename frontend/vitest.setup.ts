@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, beforeEach } from "vitest";
 import { GENERAL_SPACE } from "@/data/constants";
 import { CURRENT_USER_ID, createSeed } from "@/data/fixtures";
+import { useAssistant } from "@/lib/assistant";
 import { useStore, whenIdle } from "@/lib/store";
 import { installFakeServer } from "./vitest.server";
 
@@ -20,6 +21,7 @@ beforeEach(() => {
   installFakeServer();
   // Start every test with the sample board loaded, as if the server had just sent it.
   useStore.getState().reset();
+  useAssistant.getState().reset();
   useStore.setState({
     ...createSeed(),
     currentUserId: CURRENT_USER_ID,

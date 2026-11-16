@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useSyncExternalStore } from "react";
 import Board from "@/components/Board";
+import AiPanel from "@/components/AiPanel";
 import BoardSkeleton from "@/components/BoardSkeleton";
 import CardDialog from "@/components/CardDialog";
 import Chat from "@/components/Chat";
@@ -85,6 +86,7 @@ export default function Home() {
         <Header />
         {view === "board" ? <Board /> : <Chat />}
       </div>
+      <AiPanel />
       <UndoToast />
       <NoticeToast />
       {dialog?.type === "help" && <HelpDialog />}

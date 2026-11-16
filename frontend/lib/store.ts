@@ -82,6 +82,8 @@ export interface Store extends State {
   loadBoard: () => Promise<void>;
   /** Quietly fetches the board again and replaces the screen with the server's truth. */
   refresh: () => Promise<void>;
+  /** Puts a board that came back in an answer (the AI's) on screen without asking for it again. */
+  applyServerBoard: (board: RawBoard) => void;
   /** Forgets everything of the signed-in user (sign-out, ended session). Keeps the light preferences. */
   reset: () => void;
 }
@@ -490,6 +492,12 @@ export const useStore = create<Store>()(
           } catch {
             // Unreachable: the screen already shows the state from before the failed change.
           }
+        },
+
+        applyServerBoard: (board) => {
+          // Changes of the user that are still on their way would be wiped by an older board: fetch again once they are saved.
+          if (hasPendingChanges()) void whenIdle().then(() => get().refresh());
+          else applyBoard(parseBoard(board));
         },
 
         reset: () => {

@@ -13,6 +13,7 @@ export default function HelpDialog() {
     [s.deleteCard, ["Del"]],
     [s.goChat, ["G", "C"]],
     [s.goBoard, ["G", "B"]],
+    [s.aiAssistant, ["A"]],
     [s.language, ["L"]],
     [s.help, ["?"]],
     [s.close, ["Esc"]],

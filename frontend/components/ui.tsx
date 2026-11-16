@@ -38,6 +38,12 @@ export const ChatIcon = (p: IconProps) => (
     <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z" />
   </Stroke>
 );
+export const SparkleIcon = (p: IconProps) => (
+  <Stroke {...p}>
+    <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z" />
+    <path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15Z" />
+  </Stroke>
+);
 export const PlusIcon = (p: IconProps) => (
   <Stroke width={2.2} {...p}>
     <path d="M12 5v14M5 12h14" />

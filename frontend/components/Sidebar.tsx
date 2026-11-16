@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useAssistant } from "@/lib/assistant";
 import { useT } from "@/lib/i18n";
 import { signOut } from "@/lib/session";
 import { columnOf, useStore } from "@/lib/store";
 import type { Card } from "@/lib/types";
 import { GENERAL_SPACE } from "@/data/constants";
-import { Avatar, BoardIcon, ChatIcon, ChevronDownIcon, DotsIcon, Logo, Segmented, SegmentButton, cx } from "./ui";
+import { Avatar, BoardIcon, ChatIcon, ChevronDownIcon, DotsIcon, Logo, Segmented, SegmentButton, SparkleIcon, cx } from "./ui";
 
 const activeItem = "bg-column shadow-[inset_0_0_0_1px_var(--color-selected-ring)]";
 const spaceButton = (active: boolean) =>
@@ -90,6 +91,29 @@ function AccountMenu() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Opens the AI assistant panel beside the page. Not a section of its own: the open view stays as it is. */
+function AssistantButton() {
+  const { t } = useT();
+  const open = useAssistant((s) => s.open);
+  const toggle = useAssistant((s) => s.toggle);
+  return (
+    <button
+      type="button"
+      data-ai-toggle
+      aria-expanded={open}
+      aria-controls="ai-panel"
+      onClick={toggle}
+      className={cx(
+        "flex h-10 w-full items-center gap-2.5 rounded-[10px] px-2.5 text-start text-[13.5px] font-semibold transition-colors",
+        open ? cx(activeItem, "text-heading") : "text-secondary hover:bg-space-hover",
+      )}
+    >
+      <SparkleIcon size={17} />
+      {t.ai.title}
+    </button>
   );
 }
 
@@ -184,6 +208,7 @@ export default function Sidebar() {
             </span>
           )}
         </NavButton>
+        <AssistantButton />
       </nav>
 
       <div data-testid="sidebar-scroll" className="tidy-scroll flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3.5 pb-3 pt-1.5">

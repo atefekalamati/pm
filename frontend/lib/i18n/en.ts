@@ -125,6 +125,7 @@ export const en = {
     save: "Save",
   },
   shortcutList: {
+    aiAssistant: "Open or close the AI assistant",
     newCard: "New card in focused column",
     openRoom: "Open task room",
     moveCard: "Move card to previous / next column",
@@ -134,6 +135,32 @@ export const en = {
     language: "Switch language",
     help: "Show shortcuts",
     close: "Close dialog",
+  },
+  ai: {
+    title: "AI assistant",
+    placeholder: "Ask the assistant to change your board…",
+    send: "Send",
+    thinking: "Thinking…",
+    loading: "Loading the conversation…",
+    guideTitle: "What can I do for you?",
+    guideText: "I can create cards, edit them and move them between columns. Try one of these:",
+    examples: ['Create a card "Write the release notes" in To do', 'Move "Column unit tests" to Review', "Which cards are overdue?"],
+    tryAgain: "Try again",
+    you: "You",
+    errors: {
+      notConfigured: "AI is not configured. Add OPENROUTER_API_KEY to the .env file and restart Tidy.",
+      busy: "The AI assistant is busy right now. Nothing was changed. Please try again in a moment.",
+      failed: "The AI assistant could not answer (the service reported a problem). Nothing was changed.",
+      timeout: "The AI assistant took too long to answer. Nothing was changed.",
+      offline: "Can't reach the server. Nothing was changed.",
+    },
+    chip: {
+      created: (title: string) => `Created: ${title}`,
+      updated: (title: string) => `Updated: ${title}`,
+      moved: (title: string, column: string) => `Moved: ${title} → ${column}`,
+      gone: "(deleted card)",
+      open: (label: string) => `Open card. ${label}`,
+    },
   },
   dnd: {
     instructions:

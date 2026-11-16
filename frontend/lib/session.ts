@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api, json, onUnauthorized } from "./api";
+import { useAssistant } from "./assistant";
 import { useStore } from "./store";
 import type { LocalizedText } from "./types";
 
@@ -21,6 +22,7 @@ function endSession() {
   // The page leaves the board first, then the data goes: nothing ever renders a board without its data.
   useSession.setState({ status: "signed-out", user: null });
   useStore.getState().reset();
+  useAssistant.getState().reset();
 }
 
 // Any answer "not signed in" from the server, anywhere, ends the session here.
